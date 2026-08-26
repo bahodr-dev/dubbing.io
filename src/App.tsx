@@ -9,6 +9,7 @@ import { LandingView } from './views/LandingView';
 import { DashboardView } from './views/DashboardView';
 import { StudioView } from './views/StudioView';
 import { PricingView } from './views/PricingView';
+import { SignUpView } from './views/SignUpView';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('landing');
@@ -69,6 +70,7 @@ export function App() {
     setUserEmail(email);
     localStorage.setItem('dubbing_io_user', email);
     setActiveTab('dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLogout = () => {
@@ -80,6 +82,33 @@ export function App() {
   const handleSelectPlan = (_plan: string) => {
     setIsNewDubOpen(true);
   };
+
+  // Dedicated Full-Screen Experience for Sign Up
+  if (activeTab === 'signup') {
+    return (
+      <div className="app-container">
+        <SignUpView
+          onNavigate={(tab) => {
+            setActiveTab(tab);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onSuccess={handleAuthSuccess}
+          onOpenSignIn={() => setIsAuthOpen(true)}
+        />
+
+        <AuthModal
+          isOpen={isAuthOpen}
+          onClose={() => setIsAuthOpen(false)}
+          onSuccess={handleAuthSuccess}
+          onNavigateToSignUp={() => {
+            setIsAuthOpen(false);
+            setActiveTab('signup');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -150,6 +179,11 @@ export function App() {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         onSuccess={handleAuthSuccess}
+        onNavigateToSignUp={() => {
+          setIsAuthOpen(false);
+          setActiveTab('signup');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
 
       <NewDubModal

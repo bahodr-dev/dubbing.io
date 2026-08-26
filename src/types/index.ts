@@ -57,4 +57,4 @@ export interface ProcessingStep {
   targetPercent: number;
 }
 
-export type ActiveTab = 'landing' | 'dashboard' | 'studio' | 'pricing';
+export type ActiveTab = 'landing' | 'dashboard' | 'studio' | 'pricing' | 'signup';

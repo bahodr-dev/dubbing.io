@@ -273,18 +273,19 @@ h1, h2, h3, h4, h5, h6 {
 .input, .select, .textarea {
   width: 100%;
   font-family: var(--font-sans);
-  font-size: 13.5px;
-  padding: 9px 12px;
+  font-size: 14px;
+  padding: 10px 14px;
   border: var(--border-light);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background-color: var(--c-white);
   color: var(--black-100);
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .input:focus, .select:focus, .textarea:focus {
   border-color: var(--black-100);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
 }
 
 .input::placeholder, .textarea::placeholder {
@@ -293,12 +294,10 @@ h1, h2, h3, h4, h5, h6 {
 
 .label {
   display: block;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--black-60);
-  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.7);
+  margin-bottom: 7px;
 }
 
 /* Cards & Containers */
@@ -545,7 +544,11 @@ h1, h2, h3, h4, h5, h6 {
   .hero-stagger-3,
   .hero-stagger-4,
   .hero-stagger-5,
-  .tech-spec-row {
+  .tech-spec-row,
+  .signup-anim-brand,
+  .signup-anim-block1,
+  .signup-anim-block2,
+  .signup-anim-form {
     animation: none !important;
     transform: none !important;
     opacity: 1 !important;
@@ -665,6 +668,82 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--black-90);
 }
 
+/* =========================================================================
+   SIGN UP PAGE SYSTEM (Full-Screen Split-Screen Monochrome Editorial Experience)
+   ========================================================================= */
+.signup-page-wrapper {
+  min-height: 100vh;
+  display: flex;
+  width: 100vw;
+  background-color: var(--c-white);
+  position: relative;
+  overflow-x: hidden;
+}
+
+.signup-left-panel {
+  flex: 1;
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px;
+  background-color: #050505;
+  background-image: 
+    radial-gradient(circle at 20% 25%, rgba(255, 255, 255, 0.14) 0%, transparent 45%),
+    radial-gradient(circle at 75% 70%, rgba(255, 255, 255, 0.09) 0%, transparent 50%),
+    radial-gradient(circle at 45% 90%, rgba(255, 255, 255, 0.05) 0%, transparent 40%),
+    linear-gradient(180deg, #0c0c0c 0%, #020202 100%);
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.signup-left-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.signup-right-panel {
+  flex: 1.1;
+  min-height: 100vh;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding: 48px;
+  justify-content: center;
+  align-items: center;
+}
+
+.signup-editorial-title {
+  font-size: clamp(52px, 7vw, 104px);
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 0.88;
+  color: #ffffff;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.signup-anim-brand {
+  animation: heroFadeUp 600ms var(--ease-spring) 0ms both;
+}
+
+.signup-anim-block1 {
+  animation: heroFadeUp 700ms var(--ease-spring) 120ms both;
+}
+
+.signup-anim-block2 {
+  animation: heroFadeUp 700ms var(--ease-spring) 260ms both;
+}
+
+.signup-anim-form {
+  animation: heroFadeUp 480ms var(--ease-spring) 180ms both;
+}
+
 /* Video Player & Timeline Slider */
 .timeline-slider {
   -webkit-appearance: none;
@@ -764,6 +843,22 @@ h1, h2, h3, h4, h5, h6 {
     padding: 16px 0;
     min-width: auto;
   }
+
+  /* Sign Up Responsive */
+  .signup-page-wrapper {
+    flex-direction: column;
+  }
+  .signup-left-panel {
+    min-height: 38vh;
+    padding: 32px 24px;
+  }
+  .signup-right-panel {
+    padding: 48px 24px 64px;
+    justify-content: flex-start;
+  }
+  .signup-editorial-title {
+    font-size: clamp(40px, 9vw, 64px);
+  }
 }
 
 @media (max-width: 600px) {
@@ -785,6 +880,20 @@ h1, h2, h3, h4, h5, h6 {
   }
   .tech-spec-title {
     font-size: 24px;
+  }
+
+  /* Sign Up Mobile */
+  .signup-left-panel {
+    min-height: 32vh;
+    padding: 24px 20px;
+  }
+  .signup-right-panel {
+    padding: 36px 20px 48px;
+  }
+  .signup-top-auth-link {
+    position: static !important;
+    margin-bottom: 24px;
+    text-align: right;
   }
 }
 

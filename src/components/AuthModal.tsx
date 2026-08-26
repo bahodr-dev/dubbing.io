@@ -4,9 +4,15 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (email: string) => void;
+  onNavigateToSignUp?: () => void;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSuccess,
+  onNavigateToSignUp,
+}) => {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -144,7 +150,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               <>
                 Don't have an account?{' '}
                 <button
-                  onClick={() => { setMode('signup'); setError(''); }}
+                  onClick={() => {
+                    if (onNavigateToSignUp) {
+                      onNavigateToSignUp();
+                    } else {
+                      setMode('signup');
+                      setError('');
+                    }
+                  }}
                   style={{ background: 'none', border: 'none', color: 'var(--black-100)', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
                 >
                   Create account
