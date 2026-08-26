@@ -46,9 +46,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
 
   return (
     <div style={{ backgroundColor: 'var(--c-white)' }}>
-      {/* 1. Hero Section */}
+      {/* 1. Hero Content */}
       <section style={{
-        padding: '120px 0 96px',
+        paddingTop: '120px',
         textAlign: 'center',
         position: 'relative',
       }}>
@@ -108,7 +108,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '12px',
-            marginBottom: '64px',
           }}>
             <button
               onClick={onStartDubbing}
@@ -134,44 +133,45 @@ export const LandingView: React.FC<LandingViewProps> = ({
               View pricing
             </button>
           </div>
+        </div>
 
-          {/* Step 5: Interactive Product Visual Demonstration Box */}
-          <div className="hero-stagger-5" style={{
-            maxWidth: '920px',
-            margin: '0 auto',
+        {/* 2. Redesigned Unified Product Visual / Hero Demo Section */}
+        <div className="product-visual-container">
+          <div style={{
             border: '1px solid var(--black-12)',
             borderRadius: 'var(--radius-sm)',
             overflow: 'hidden',
-            backgroundColor: '#050505',
-            boxShadow: '0 20px 48px rgba(0, 0, 0, 0.07)',
+            backgroundColor: '#030303',
+            boxShadow: '0 24px 64px rgba(0, 0, 0, 0.08)',
           }}>
-            {/* Demo Bar Header */}
+            {/* Top Studio Control Bar */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '12px 18px',
+              padding: '14px 24px',
               borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              backgroundColor: '#0a0a0a',
+              backgroundColor: '#080808',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span className="mono" style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.6)', letterSpacing: '0.04em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span className="mono" style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.65)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                   LIVE COMPARISON STUDIO
                 </span>
                 <span style={{
-                  fontSize: '10px',
+                  fontSize: '9.5px',
                   fontWeight: 700,
-                  backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.12)',
                   color: '#ffffff',
-                  padding: '1px 6px',
+                  padding: '2px 7px',
                   borderRadius: '2px',
-                  letterSpacing: '0.04em',
+                  letterSpacing: '0.05em',
+                  fontFamily: 'var(--font-mono)',
                 }}>
                   INTERACTIVE
                 </span>
               </div>
 
-              {/* Language Switcher Buttons */}
+              {/* Language Selector Switcher */}
               <div style={{ display: 'flex', gap: '4px' }}>
                 {[
                   { code: 'uz', label: "Uzbek (O'zbek)" },
@@ -187,12 +187,12 @@ export const LandingView: React.FC<LandingViewProps> = ({
                       setIsPlayingDemo(false);
                     }}
                     style={{
-                      background: demoLang === item.code ? '#ffffff' : 'rgba(255, 255, 255, 0.06)',
-                      color: demoLang === item.code ? '#000000' : 'rgba(255, 255, 255, 0.75)',
+                      background: demoLang === item.code ? '#ffffff' : 'rgba(255, 255, 255, 0.05)',
+                      color: demoLang === item.code ? '#000000' : 'rgba(255, 255, 255, 0.7)',
                       border: '1px solid rgba(255, 255, 255, 0.12)',
                       fontSize: '11.5px',
                       fontWeight: 600,
-                      padding: '4px 9px',
+                      padding: '4px 10px',
                       borderRadius: 'var(--radius-xs)',
                       cursor: 'pointer',
                       transition: 'all 120ms ease',
@@ -204,123 +204,263 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
             </div>
 
-            {/* Split Comparison Demonstration Area */}
-            <div className="hero-comparison-grid" style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-            }}>
-              {/* Left Column: Original English */}
-              <div className="hero-comparison-left" style={{
-                padding: '28px 24px',
-                borderRight: '1px solid rgba(255, 255, 255, 0.08)',
-                textAlign: 'left',
-                backgroundColor: '#050505',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <div>
-                    <span className="mono" style={{ fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Source Video
-                    </span>
-                    <h3 style={{ fontSize: '16.5px', fontWeight: 700, color: '#ffffff', marginTop: '2px' }}>
-                      Original: English
-                    </h3>
+            {/* 3-Column Transformation Area: Original -> Dubbing Signal -> Dubbed */}
+            <div style={{ padding: '36px 32px 28px' }}>
+              <div className="product-transformation-grid">
+                {/* Column 1: ORIGINAL SIDE */}
+                <div className="demo-stagger-left" style={{ textAlign: 'left' }}>
+                  {/* Symmetrical Label Structure */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    marginBottom: '10px',
+                  }}>
+                    <div>
+                      <div className="mono" style={{
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        color: 'rgba(255, 255, 255, 0.5)',
+                        marginBottom: '2px',
+                      }}>
+                        ORIGINAL • <span style={{ opacity: 0.8 }}>Source Video</span>
+                      </div>
+                      <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.02em' }}>
+                        Original: English
+                      </h3>
+                    </div>
+
+                    <button
+                      onClick={() => handlePlayDemo('original', demoLang)}
+                      className="btn btn-secondary btn-sm"
+                      style={{
+                        backgroundColor: demoTrack === 'original' && isPlayingDemo ? '#ffffff' : 'rgba(255, 255, 255, 0.06)',
+                        color: demoTrack === 'original' && isPlayingDemo ? '#000000' : '#ffffff',
+                        border: '1px solid rgba(255, 255, 255, 0.22)',
+                        padding: '5px 11px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {demoTrack === 'original' && isPlayingDemo ? <Volume2 size={12} /> : <Play size={12} />}
+                      {demoTrack === 'original' && isPlayingDemo ? 'Playing' : 'Listen original'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handlePlayDemo('original', demoLang)}
-                    className="btn btn-secondary btn-sm"
-                    style={{
-                      backgroundColor: demoTrack === 'original' && isPlayingDemo ? '#ffffff' : 'transparent',
-                      color: demoTrack === 'original' && isPlayingDemo ? '#000000' : '#ffffff',
-                      border: '1px solid rgba(255, 255, 255, 0.25)',
-                      padding: '5px 10px',
-                      fontSize: '12px',
-                    }}
-                  >
-                    {demoTrack === 'original' && isPlayingDemo ? <Volume2 size={12} /> : <Play size={12} />}
-                    {demoTrack === 'original' && isPlayingDemo ? 'Playing' : 'Listen original'}
-                  </button>
+
+                  {/* 16:9 Video Frame Visual Surface */}
+                  <div className="demo-video-frame" style={{ marginBottom: '14px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="mono" style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase' }}>
+                        TRACK A // 44.1 kHz
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.6)', border: '1px solid rgba(255, 255, 255, 0.1)', padding: '1px 5px', borderRadius: '2px' }}>
+                        EN-US
+                      </span>
+                    </div>
+
+                    {/* Speech Transcript Preview Box */}
+                    <div style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-xs)',
+                      margin: '10px 0',
+                    }}>
+                      <p style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.9)', lineHeight: 1.5, fontWeight: 400 }}>
+                        "{demoPhrases.en}"
+                      </p>
+                    </div>
+
+                    {/* Synchronized Waveform */}
+                    <Waveform
+                      isPlaying={demoTrack === 'original' && isPlayingDemo}
+                      barsCount={34}
+                      height={24}
+                      color="white"
+                      seed={24}
+                    />
+                  </div>
                 </div>
 
-                <div style={{
-                  padding: '14px 16px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.07)',
-                  borderRadius: 'var(--radius-xs)',
-                  marginBottom: '18px',
-                  minHeight: '68px',
-                }}>
-                  <p style={{ fontSize: '13.5px', color: 'rgba(255, 255, 255, 0.85)', lineHeight: 1.5 }}>
-                    "{demoPhrases.en}"
-                  </p>
+                {/* Column 2: THE SIGNATURE DUBBING SIGNAL */}
+                <div className="product-signal-column demo-stagger-center">
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}>
+                    <span className="mono" style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: 'rgba(255, 255, 255, 0.65)',
+                      letterSpacing: '0.06em',
+                    }}>
+                      EN
+                    </span>
+
+                    {/* Minimal Geometric Flow Waveform SVG */}
+                    <svg width="72" height="24" viewBox="0 0 72 24" fill="none" style={{ overflow: 'visible' }}>
+                      {/* Base Background Static Trace */}
+                      <path
+                        d="M 0,12 H 18 L 24,4 L 30,20 L 36,4 L 42,20 L 48,12 H 66"
+                        stroke="rgba(255, 255, 255, 0.2)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      {/* Arrow Head */}
+                      <path
+                        d="M 62,8 L 68,12 L 62,16"
+                        stroke="rgba(255, 255, 255, 0.4)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      {/* Traveling Active Signal Beam */}
+                      <path
+                        className="dubbing-signal-pulse"
+                        d="M 0,12 H 18 L 24,4 L 30,20 L 36,4 L 42,20 L 48,12 H 66 M 62,8 L 68,12 L 62,16"
+                        stroke="#ffffff"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+
+                    <span className="mono" style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#ffffff',
+                      letterSpacing: '0.06em',
+                    }}>
+                      {demoLang.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
 
-                <Waveform
-                  isPlaying={demoTrack === 'original' && isPlayingDemo}
-                  barsCount={32}
-                  height={28}
-                  color="white"
-                  seed={24}
-                />
+                {/* Column 3: DUBBED SIDE */}
+                <div className="demo-stagger-right" style={{ textAlign: 'left' }}>
+                  {/* Symmetrical Label Structure */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    marginBottom: '10px',
+                  }}>
+                    <div>
+                      <div className="mono" style={{
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        color: 'rgba(255, 255, 255, 0.5)',
+                        marginBottom: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}>
+                        DUBBED • <span style={{ opacity: 0.8 }}>Synthesized Dub</span>
+                        <Sparkles size={10} color="#ffffff" style={{ marginLeft: '2px' }} />
+                      </div>
+                      <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.02em' }}>
+                        Dubbed: {demoLang === 'uz' ? "Uzbek (Farrux)" : demoLang === 'es' ? "Spanish (Elena)" : demoLang === 'ja' ? "Japanese (Kenji)" : "German (Marcus)"}
+                      </h3>
+                    </div>
+
+                    <button
+                      onClick={() => handlePlayDemo('dubbed', demoLang)}
+                      className="btn btn-white btn-sm"
+                      style={{
+                        padding: '5px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {demoTrack === 'dubbed' && isPlayingDemo ? <Volume2 size={12} /> : <Play size={12} />}
+                      {demoTrack === 'dubbed' && isPlayingDemo ? 'Playing dub' : 'Play dubbed AI'}
+                    </button>
+                  </div>
+
+                  {/* 16:9 Video Frame Visual Surface */}
+                  <div className="demo-video-frame" style={{ marginBottom: '14px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="mono" style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase' }}>
+                        TRACK B // NEURAL SYNTHESIS
+                      </span>
+                      <span style={{ fontSize: '10px', color: '#ffffff', backgroundColor: 'rgba(255, 255, 255, 0.15)', padding: '1px 5px', borderRadius: '2px', fontFamily: 'var(--font-mono)' }}>
+                        {demoLang.toUpperCase()}
+                      </span>
+                    </div>
+
+                    {/* Speech Transcript Preview Box */}
+                    <div style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.07)',
+                      border: '1px solid rgba(255, 255, 255, 0.14)',
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-xs)',
+                      margin: '10px 0',
+                    }}>
+                      <p style={{ fontSize: '13px', color: '#ffffff', lineHeight: 1.5, fontWeight: 500 }}>
+                        "{demoPhrases[demoLang]}"
+                      </p>
+                    </div>
+
+                    {/* Synchronized Waveform */}
+                    <Waveform
+                      isPlaying={demoTrack === 'dubbed' && isPlayingDemo}
+                      barsCount={34}
+                      height={24}
+                      color="white"
+                      seed={88}
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Right Column: Dubbed Uzbek / Target */}
+              {/* Bottom Language Transformation Visualization Line */}
               <div style={{
-                padding: '28px 24px',
-                textAlign: 'left',
-                backgroundColor: '#090909',
+                marginTop: '28px',
+                paddingTop: '20px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '16px',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className="mono" style={{ fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Synthesized Dub
-                      </span>
-                      <Sparkles size={11} color="#ffffff" />
-                    </div>
-                    <h3 style={{ fontSize: '16.5px', fontWeight: 700, color: '#ffffff', marginTop: '2px' }}>
-                      Dubbed: {demoLang === 'uz' ? "Uzbek (Farrux)" : demoLang === 'es' ? "Spanish (Elena)" : demoLang === 'ja' ? "Japanese (Kenji)" : "German (Marcus)"}
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => handlePlayDemo('dubbed', demoLang)}
-                    className="btn btn-white btn-sm"
-                    style={{
-                      padding: '5px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {demoTrack === 'dubbed' && isPlayingDemo ? <Volume2 size={12} /> : <Play size={12} />}
-                    {demoTrack === 'dubbed' && isPlayingDemo ? 'Playing dub' : 'Play dubbed AI'}
-                  </button>
-                </div>
-
                 <div style={{
-                  padding: '14px 16px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: 'var(--radius-xs)',
-                  marginBottom: '18px',
-                  minHeight: '68px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  width: '360px',
+                  maxWidth: '100%',
                 }}>
-                  <p style={{ fontSize: '13.5px', color: '#ffffff', fontWeight: 500, lineHeight: 1.5 }}>
-                    "{demoPhrases[demoLang]}"
-                  </p>
+                  <span className="mono" style={{ fontSize: '12px', fontWeight: 700, color: 'rgba(255, 255, 255, 0.6)' }}>
+                    EN
+                  </span>
+                  <div style={{
+                    flex: 1,
+                    height: '1px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                  }}>
+                    <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.6)', transform: 'translateY(-0.5px)' }}>▶</span>
+                  </div>
+                  <span className="mono" style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                    {demoLang.toUpperCase()}
+                  </span>
                 </div>
-
-                <Waveform
-                  isPlaying={demoTrack === 'dubbed' && isPlayingDemo}
-                  barsCount={32}
-                  height={28}
-                  color="white"
-                  seed={88}
-                />
               </div>
             </div>
 
             {/* Bottom Demo Bar Action */}
             <div style={{
-              padding: '12px 18px',
+              padding: '14px 24px',
               backgroundColor: '#000000',
               borderTop: '1px solid rgba(255, 255, 255, 0.08)',
               display: 'flex',
@@ -337,7 +477,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   background: 'none',
                   border: 'none',
                   color: '#ffffff',
-                  fontSize: '11.5px',
+                  fontSize: '12px',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
