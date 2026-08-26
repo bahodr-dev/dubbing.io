@@ -40,7 +40,7 @@
   --radius-lg: 8px;
 
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-fast: 160ms var(--ease-spring);
+  --transition-fast: 180ms var(--ease-spring);
   --transition-normal: 240ms var(--ease-spring);
 }
 
@@ -155,13 +155,14 @@ h1, h2, h3, h4, h5, h6 {
   transition: transform var(--transition-fast);
 }
 
+.nav-link:hover::after,
+.nav-link.active::after {
+  transform: scaleX(1);
+}
+
 .nav-link.active {
   color: var(--black-100);
   font-weight: 600;
-}
-
-.nav-link.active::after {
-  transform: scaleX(1);
 }
 
 /* Buttons */
@@ -254,9 +255,11 @@ h1, h2, h3, h4, h5, h6 {
 .btn-arrow-group .arrow-symbol {
   display: inline-block;
   transition: transform var(--transition-fast);
+  will-change: transform;
 }
 
-.btn:hover .arrow-symbol {
+.btn:hover .arrow-symbol,
+.btn-arrow-group:hover .arrow-symbol {
   transform: translateX(4px);
 }
 
