@@ -12,7 +12,16 @@ import { PricingView } from './views/PricingView';
 import { SignUpView } from './views/SignUpView';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('landing');
+  const [userEmail, setUserEmail] = useState<string | null>(() => {
+    return localStorage.getItem('dubbing_io_user');
+  });
+
+  // Default directly to 'signup' if user is not authenticated, otherwise 'dashboard'
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const savedUser = localStorage.getItem('dubbing_io_user');
+    return savedUser ? 'dashboard' : 'signup';
+  });
+
   const [projects, setProjects] = useState<Project[]>(() => {
     const saved = localStorage.getItem('dubbing_io_projects');
     if (saved) {
@@ -28,9 +37,6 @@ export function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(INITIAL_PROJECTS[0].id);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewDubOpen, setIsNewDubOpen] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(() => {
-    return localStorage.getItem('dubbing_io_user') || 'bahodir@dubbing.io';
-  });
 
   // Persist projects to localStorage
   useEffect(() => {
@@ -76,14 +82,15 @@ export function App() {
   const handleLogout = () => {
     setUserEmail(null);
     localStorage.removeItem('dubbing_io_user');
-    setActiveTab('landing');
+    setActiveTab('signup');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectPlan = (_plan: string) => {
     setIsNewDubOpen(true);
   };
 
-  // Dedicated Full-Screen Experience for Sign Up
+  // Dedicated Full-Screen Experience for Sign Up (Default Entry Point)
   if (activeTab === 'signup') {
     return (
       <div className="app-container">
