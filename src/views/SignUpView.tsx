@@ -3,13 +3,12 @@ import { Eye, EyeOff } from 'lucide-react';
 import type { ActiveTab } from '../types';
 
 interface SignUpViewProps {
-  onNavigate: (tab: ActiveTab) => void;
+  onNavigate?: (tab: ActiveTab) => void;
   onSuccess: (email: string) => void;
   onOpenSignIn: () => void;
 }
 
 export const SignUpView: React.FC<SignUpViewProps> = ({
-  onNavigate,
   onSuccess,
   onOpenSignIn,
 }) => {
@@ -42,7 +41,11 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
       <div className="signup-left-panel">
         {/* Brand Signature */}
         <div 
-          onClick={() => onNavigate('landing')}
+          onClick={() => {
+            setEmail('');
+            setPassword('');
+            setError('');
+          }}
           className="signup-anim-brand"
           style={{
             cursor: 'pointer',
@@ -112,40 +115,6 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
       {/* RIGHT PANEL: Minimal Registration Form (50%) */}
       <div className="signup-right-panel">
-        {/* Top-Right Auth Link */}
-        <div 
-          className="signup-top-auth-link"
-          style={{
-            position: 'absolute',
-            top: '48px',
-            right: '48px',
-            fontSize: '14px',
-            color: 'rgba(0, 0, 0, 0.55)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-          }}
-        >
-          <span>Already have an account?</span>
-          <button
-            type="button"
-            onClick={onOpenSignIn}
-            className="btn-arrow-group"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--black-100)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontSize: '14px',
-              padding: 0,
-            }}
-          >
-            <span>Sign in</span>
-            <span className="arrow-symbol">→</span>
-          </button>
-        </div>
-
         {/* Centered Sign Up Form Container */}
         <div className="signup-anim-form" style={{ width: '100%', maxWidth: '420px' }}>
           {/* Form Header */}
@@ -297,10 +266,10 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               </div>
             </div>
 
-            {/* Submit Button */}
+            {/* Submit Button (without arrow) */}
             <button
               type="submit"
-              className="btn btn-primary btn-arrow-group"
+              className="btn btn-primary"
               style={{
                 width: '100%',
                 height: '50px',
@@ -309,17 +278,46 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 borderRadius: 'var(--radius-sm)',
               }}
             >
-              <span>Create account</span>
-              <span className="arrow-symbol">→</span>
+              Create account
             </button>
           </form>
+
+          {/* Under-button Auth Link (without arrow) */}
+          <div style={{
+            marginTop: '20px',
+            textAlign: 'center',
+            fontSize: '14px',
+            color: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+          }}>
+            <span>Already have an account?</span>
+            <button
+              type="button"
+              onClick={onOpenSignIn}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--black-100)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: 0,
+                textDecoration: 'underline',
+              }}
+            >
+              Sign in
+            </button>
+          </div>
 
           {/* Terms & Privacy Notice */}
           <p style={{
             fontSize: '11.5px',
             color: 'rgba(0, 0, 0, 0.45)',
             textAlign: 'center',
-            marginTop: '18px',
+            marginTop: '20px',
             lineHeight: 1.5,
           }}>
             By continuing, you agree to our{' '}

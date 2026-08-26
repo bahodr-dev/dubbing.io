@@ -21,12 +21,17 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           marginBottom: '64px',
         }}>
           <div>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              marginBottom: '16px',
-            }}>
+            <div 
+              onClick={() => onNavigate('dashboard')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginBottom: '16px',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
               <div style={{
                 width: '20px',
                 height: '20px',
@@ -59,12 +64,12 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             </h4>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <li>
-                <button onClick={() => onNavigate('landing')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: 'var(--black-80)' }}>
-                  Video Dubbing
+                <button onClick={() => onNavigate('dashboard')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: 'var(--black-80)' }}>
+                  Studio Dashboard
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('landing')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: 'var(--black-80)' }}>
+                <button onClick={() => onNavigate('studio')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: 'var(--black-80)' }}>
                   Voice Synthesis
                 </button>
               </li>
@@ -74,8 +79,8 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('dashboard')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: 'var(--black-80)' }}>
-                  Studio Dashboard
+                <button onClick={() => onNavigate('signup')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: 'var(--black-80)' }}>
+                  Create Account
                 </button>
               </li>
             </ul>

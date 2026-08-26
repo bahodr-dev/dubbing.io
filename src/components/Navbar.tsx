@@ -20,15 +20,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const handleLogoClick = () => {
+    onNavigate(isAuthenticated ? 'dashboard' : 'signup');
+    setMobileMenuOpen(false);
+  };
+
   return (
     <header className="nav-header">
       <div className="nav-container">
         {/* Brand Logo */}
         <div 
-          onClick={() => {
-            onNavigate('landing');
-            setMobileMenuOpen(false);
-          }} 
+          onClick={handleLogoClick}
           style={{
             cursor: 'pointer',
             display: 'flex',
@@ -67,37 +69,42 @@ export const Navbar: React.FC<NavbarProps> = ({
           alignItems: 'center',
           gap: '28px',
         }}>
-          <button
-            onClick={() => onNavigate('landing')}
-            className={`nav-link ${activeTab === 'landing' ? 'active' : ''}`}
-          >
-            Product
-          </button>
-          <button
-            onClick={() => {
-              onNavigate('landing');
-              setTimeout(() => {
-                const el = document.getElementById('how-it-works');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }, 50);
-            }}
-            className="nav-link"
-          >
-            How it works
-          </button>
-          <button
-            onClick={() => onNavigate('pricing')}
-            className={`nav-link ${activeTab === 'pricing' ? 'active' : ''}`}
-          >
-            Pricing
-          </button>
-          {isAuthenticated && (
-            <button
-              onClick={() => onNavigate('dashboard')}
-              className={`nav-link ${activeTab === 'dashboard' || activeTab === 'studio' ? 'active' : ''}`}
-            >
-              Dashboard
-            </button>
+          {isAuthenticated ? (
+            <>
+              <button
+                onClick={() => onNavigate('dashboard')}
+                className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => onNavigate('studio')}
+                className={`nav-link ${activeTab === 'studio' ? 'active' : ''}`}
+              >
+                Studio
+              </button>
+              <button
+                onClick={() => onNavigate('pricing')}
+                className={`nav-link ${activeTab === 'pricing' ? 'active' : ''}`}
+              >
+                Pricing
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => onNavigate('signup')}
+                className={`nav-link ${activeTab === 'signup' ? 'active' : ''}`}
+              >
+                Sign Up
+              </button>
+              <button
+                onClick={() => onNavigate('pricing')}
+                className={`nav-link ${activeTab === 'pricing' ? 'active' : ''}`}
+              >
+                Pricing
+              </button>
+            </>
           )}
         </nav>
 
@@ -135,11 +142,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Sign in
               </button>
               <button
-                onClick={onOpenNewDub}
+                onClick={() => onNavigate('signup')}
                 className="btn btn-primary btn-sm btn-arrow-group"
                 style={{ padding: '7px 14px', fontSize: '13px', fontWeight: 600 }}
               >
-                <span>Start dubbing</span>
+                <span>Create account</span>
                 <span className="arrow-symbol">→</span>
               </button>
             </>
@@ -196,46 +203,65 @@ export const Navbar: React.FC<NavbarProps> = ({
           flexDirection: 'column',
           gap: '16px',
         }}>
-          <button
-            onClick={() => {
-              onNavigate('landing');
-              setMobileMenuOpen(false);
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              textAlign: 'left',
-              fontSize: '15px',
-              fontWeight: activeTab === 'landing' ? 700 : 500,
-              color: 'var(--black-100)',
-              cursor: 'pointer',
-              padding: '6px 0',
-            }}
-          >
-            Product
-          </button>
-          <button
-            onClick={() => {
-              onNavigate('landing');
-              setMobileMenuOpen(false);
-              setTimeout(() => {
-                const el = document.getElementById('how-it-works');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }, 50);
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              textAlign: 'left',
-              fontSize: '15px',
-              fontWeight: 500,
-              color: 'var(--black-60)',
-              cursor: 'pointer',
-              padding: '6px 0',
-            }}
-          >
-            How it works
-          </button>
+          {isAuthenticated ? (
+            <>
+              <button
+                onClick={() => {
+                  onNavigate('dashboard');
+                  setMobileMenuOpen(false);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  textAlign: 'left',
+                  fontSize: '15px',
+                  fontWeight: activeTab === 'dashboard' ? 700 : 500,
+                  color: 'var(--black-100)',
+                  cursor: 'pointer',
+                  padding: '6px 0',
+                }}
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => {
+                  onNavigate('studio');
+                  setMobileMenuOpen(false);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  textAlign: 'left',
+                  fontSize: '15px',
+                  fontWeight: activeTab === 'studio' ? 700 : 500,
+                  color: 'var(--black-100)',
+                  cursor: 'pointer',
+                  padding: '6px 0',
+                }}
+              >
+                Studio
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => {
+                onNavigate('signup');
+                setMobileMenuOpen(false);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                textAlign: 'left',
+                fontSize: '15px',
+                fontWeight: activeTab === 'signup' ? 700 : 500,
+                color: 'var(--black-100)',
+                cursor: 'pointer',
+                padding: '6px 0',
+              }}
+            >
+              Sign Up
+            </button>
+          )}
           <button
             onClick={() => {
               onNavigate('pricing');
@@ -254,26 +280,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             Pricing
           </button>
-          {isAuthenticated && (
-            <button
-              onClick={() => {
-                onNavigate('dashboard');
-                setMobileMenuOpen(false);
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                textAlign: 'left',
-                fontSize: '15px',
-                fontWeight: activeTab === 'dashboard' || activeTab === 'studio' ? 700 : 500,
-                color: 'var(--black-100)',
-                cursor: 'pointer',
-                padding: '6px 0',
-              }}
-            >
-              Dashboard
-            </button>
-          )}
 
           <div style={{
             borderTop: 'var(--border-subtle)',
@@ -320,13 +326,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    onOpenNewDub();
+                    onNavigate('signup');
                     setMobileMenuOpen(false);
                   }}
                   className="btn btn-primary btn-arrow-group"
                   style={{ width: '100%', fontSize: '14px', fontWeight: 600 }}
                 >
-                  <span>Start dubbing</span>
+                  <span>Create account</span>
                   <span className="arrow-symbol">→</span>
                 </button>
               </>

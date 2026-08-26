@@ -5,7 +5,6 @@ import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { AuthModal } from './components/AuthModal';
 import { NewDubModal } from './components/NewDubModal';
-import { LandingView } from './views/LandingView';
 import { DashboardView } from './views/DashboardView';
 import { StudioView } from './views/StudioView';
 import { PricingView } from './views/PricingView';
@@ -134,17 +133,6 @@ export function App() {
 
       {/* Main View Router */}
       <main className="main-content">
-        {activeTab === 'landing' && (
-          <LandingView
-            onStartDubbing={() => setIsNewDubOpen(true)}
-            onOpenPricing={() => {
-              setActiveTab('pricing');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            onOpenSignIn={() => setIsAuthOpen(true)}
-          />
-        )}
-
         {activeTab === 'dashboard' && (
           <DashboardView
             projects={projects}
