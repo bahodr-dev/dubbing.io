@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, ArrowRight, Play, Volume2 } from 'lucide-react';
+import { Sparkles, Play, Volume2 } from 'lucide-react';
 import { Waveform } from '../components/Waveform';
 import { playVoiceSample, stopVoiceSample } from '../audio/audioSynth';
 
@@ -48,79 +48,86 @@ export const LandingView: React.FC<LandingViewProps> = ({
     <div style={{ backgroundColor: 'var(--c-white)' }}>
       {/* 1. Hero Section */}
       <section style={{
-        padding: '110px 0 80px',
+        padding: '120px 0 96px',
         textAlign: 'center',
         position: 'relative',
       }}>
         <div className="container-lg">
-          {/* Subtle Badge */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '4px 14px',
-            border: '1px solid var(--black-12)',
-            borderRadius: 'var(--radius-xs)',
-            fontSize: '12px',
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            marginBottom: '28px',
-            backgroundColor: 'var(--black-02)',
-          }}>
-            <span style={{ width: '6px', height: '6px', backgroundColor: 'var(--black-100)', borderRadius: '50%' }} />
-            Next-Gen Neural Voice Architecture
+          {/* Step 1: Technical Label */}
+          <div className="hero-stagger-1" style={{ marginBottom: '24px' }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '4px 12px',
+              border: 'var(--border-light)',
+              borderRadius: 'var(--radius-xs)',
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              backgroundColor: 'var(--black-02)',
+              color: 'var(--black-80)',
+            }}>
+              <span className="animate-pulse-dot" style={{ width: '5px', height: '5px', backgroundColor: 'var(--black-100)', borderRadius: '50%' }} />
+              Next-Gen Neural Voice Architecture
+            </div>
           </div>
 
-          {/* Large, Confident Headline */}
-          <h1 style={{
-            fontSize: 'clamp(44px, 7vw, 82px)',
-            fontWeight: 800,
-            letterSpacing: '-0.045em',
-            lineHeight: 1.02,
-            marginBottom: '28px',
-            color: 'var(--black-100)',
-          }}>
-            Your video.<br />Every language.
-          </h1>
+          {/* Step 2: Large, Architectural Display Headline */}
+          <div className="hero-stagger-2" style={{ marginBottom: '24px' }}>
+            <h1 style={{
+              fontSize: 'clamp(48px, 8vw, 92px)',
+              fontWeight: 800,
+              letterSpacing: '-0.05em',
+              lineHeight: 0.96,
+              color: 'var(--black-100)',
+              margin: '0 auto',
+            }}>
+              Your video.<br />Every language.
+            </h1>
+          </div>
 
-          {/* Subhead */}
-          <p style={{
-            fontSize: 'clamp(17px, 2.2vw, 21px)',
-            color: 'var(--black-60)',
-            maxWidth: '560px',
-            margin: '0 auto 36px',
-            lineHeight: 1.45,
-            fontWeight: 400,
-          }}>
-            AI-powered video translation and dubbing. Upload your video, choose a language, and generate studio-quality dubbed voices in seconds.
-          </p>
+          {/* Step 3: Subhead / Secondary Technical Info */}
+          <div className="hero-stagger-3" style={{ marginBottom: '36px' }}>
+            <p style={{
+              fontSize: 'clamp(16px, 2vw, 19px)',
+              color: 'var(--black-65)',
+              maxWidth: '540px',
+              margin: '0 auto',
+              lineHeight: 1.5,
+              fontWeight: 400,
+            }}>
+              AI-powered video translation and dubbing. Upload your video, choose a language, and generate studio-quality dubbed voices in seconds.
+            </p>
+          </div>
 
-          {/* Primary Action Group */}
-          <div style={{
+          {/* Step 4: Primary Action Group */}
+          <div className="hero-stagger-4" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '14px',
+            gap: '12px',
             marginBottom: '64px',
           }}>
             <button
               onClick={onStartDubbing}
-              className="btn btn-primary btn-lg"
+              className="btn btn-primary btn-lg btn-arrow-group"
               style={{
-                padding: '14px 32px',
-                fontSize: '16px',
+                padding: '13px 28px',
+                fontSize: '14.5px',
                 fontWeight: 600,
               }}
             >
-              Start dubbing →
+              <span>Start dubbing</span>
+              <span className="arrow-symbol">→</span>
             </button>
             <button
               onClick={onOpenPricing}
               className="btn btn-secondary btn-lg"
               style={{
-                padding: '14px 28px',
-                fontSize: '16px',
+                padding: '13px 24px',
+                fontSize: '14.5px',
                 fontWeight: 500,
               }}
             >
@@ -128,43 +135,44 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </button>
           </div>
 
-          {/* Interactive Video Demonstration Comparison Box */}
-          <div style={{
+          {/* Step 5: Interactive Product Visual Demonstration Box */}
+          <div className="hero-stagger-5" style={{
             maxWidth: '920px',
             margin: '0 auto',
-            border: '1px solid var(--black-20)',
-            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--black-12)',
+            borderRadius: 'var(--radius-sm)',
             overflow: 'hidden',
-            backgroundColor: 'var(--black-100)',
-            boxShadow: '0 24px 48px rgba(0, 0, 0, 0.08)',
+            backgroundColor: '#050505',
+            boxShadow: '0 20px 48px rgba(0, 0, 0, 0.07)',
           }}>
             {/* Demo Bar Header */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '14px 20px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              padding: '12px 18px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
               backgroundColor: '#0a0a0a',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span className="mono" style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>
+                <span className="mono" style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.6)', letterSpacing: '0.04em' }}>
                   LIVE COMPARISON STUDIO
                 </span>
                 <span style={{
                   fontSize: '10px',
                   fontWeight: 700,
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.15)',
                   color: '#ffffff',
-                  padding: '2px 6px',
+                  padding: '1px 6px',
                   borderRadius: '2px',
+                  letterSpacing: '0.04em',
                 }}>
                   INTERACTIVE
                 </span>
               </div>
 
               {/* Language Switcher Buttons */}
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '4px' }}>
                 {[
                   { code: 'uz', label: "Uzbek (O'zbek)" },
                   { code: 'es', label: 'Spanish' },
@@ -179,12 +187,12 @@ export const LandingView: React.FC<LandingViewProps> = ({
                       setIsPlayingDemo(false);
                     }}
                     style={{
-                      background: demoLang === item.code ? '#ffffff' : 'rgba(255, 255, 255, 0.08)',
-                      color: demoLang === item.code ? '#000000' : 'rgba(255, 255, 255, 0.8)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      fontSize: '12px',
+                      background: demoLang === item.code ? '#ffffff' : 'rgba(255, 255, 255, 0.06)',
+                      color: demoLang === item.code ? '#000000' : 'rgba(255, 255, 255, 0.75)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      fontSize: '11.5px',
                       fontWeight: 600,
-                      padding: '4px 10px',
+                      padding: '4px 9px',
                       borderRadius: 'var(--radius-xs)',
                       cursor: 'pointer',
                       transition: 'all 120ms ease',
@@ -197,23 +205,23 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
 
             {/* Split Comparison Demonstration Area */}
-            <div style={{
+            <div className="hero-comparison-grid" style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
             }}>
               {/* Left Column: Original English */}
-              <div style={{
-                padding: '32px 28px',
-                borderRight: '1px solid rgba(255, 255, 255, 0.1)',
+              <div className="hero-comparison-left" style={{
+                padding: '28px 24px',
+                borderRight: '1px solid rgba(255, 255, 255, 0.08)',
                 textAlign: 'left',
                 backgroundColor: '#050505',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                   <div>
-                    <span className="mono" style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)', textTransform: 'uppercase' }}>
+                    <span className="mono" style={{ fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Source Video
                     </span>
-                    <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff', marginTop: '2px' }}>
+                    <h3 style={{ fontSize: '16.5px', fontWeight: 700, color: '#ffffff', marginTop: '2px' }}>
                       Original: English
                     </h3>
                   </div>
@@ -223,23 +231,25 @@ export const LandingView: React.FC<LandingViewProps> = ({
                     style={{
                       backgroundColor: demoTrack === 'original' && isPlayingDemo ? '#ffffff' : 'transparent',
                       color: demoTrack === 'original' && isPlayingDemo ? '#000000' : '#ffffff',
-                      border: '1px solid rgba(255, 255, 255, 0.3)',
-                      padding: '6px 12px',
+                      border: '1px solid rgba(255, 255, 255, 0.25)',
+                      padding: '5px 10px',
+                      fontSize: '12px',
                     }}
                   >
-                    {demoTrack === 'original' && isPlayingDemo ? <Volume2 size={13} /> : <Play size={13} />}
+                    {demoTrack === 'original' && isPlayingDemo ? <Volume2 size={12} /> : <Play size={12} />}
                     {demoTrack === 'original' && isPlayingDemo ? 'Playing' : 'Listen original'}
                   </button>
                 </div>
 
                 <div style={{
-                  padding: '16px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: 'var(--radius-sm)',
-                  marginBottom: '20px',
+                  padding: '14px 16px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.07)',
+                  borderRadius: 'var(--radius-xs)',
+                  marginBottom: '18px',
+                  minHeight: '68px',
                 }}>
-                  <p style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.85)', lineHeight: 1.5 }}>
+                  <p style={{ fontSize: '13.5px', color: 'rgba(255, 255, 255, 0.85)', lineHeight: 1.5 }}>
                     "{demoPhrases.en}"
                   </p>
                 </div>
@@ -247,7 +257,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <Waveform
                   isPlaying={demoTrack === 'original' && isPlayingDemo}
                   barsCount={32}
-                  height={30}
+                  height={28}
                   color="white"
                   seed={24}
                 />
@@ -255,19 +265,19 @@ export const LandingView: React.FC<LandingViewProps> = ({
 
               {/* Right Column: Dubbed Uzbek / Target */}
               <div style={{
-                padding: '32px 28px',
+                padding: '28px 24px',
                 textAlign: 'left',
-                backgroundColor: '#0a0a0a',
+                backgroundColor: '#090909',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className="mono" style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)', textTransform: 'uppercase' }}>
+                      <span className="mono" style={{ fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Synthesized Dub
                       </span>
-                      <Sparkles size={12} color="#ffffff" />
+                      <Sparkles size={11} color="#ffffff" />
                     </div>
-                    <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff', marginTop: '2px' }}>
+                    <h3 style={{ fontSize: '16.5px', fontWeight: 700, color: '#ffffff', marginTop: '2px' }}>
                       Dubbed: {demoLang === 'uz' ? "Uzbek (Farrux)" : demoLang === 'es' ? "Spanish (Elena)" : demoLang === 'ja' ? "Japanese (Kenji)" : "German (Marcus)"}
                     </h3>
                   </div>
@@ -275,23 +285,25 @@ export const LandingView: React.FC<LandingViewProps> = ({
                     onClick={() => handlePlayDemo('dubbed', demoLang)}
                     className="btn btn-white btn-sm"
                     style={{
-                      padding: '6px 14px',
+                      padding: '5px 12px',
+                      fontSize: '12px',
                       fontWeight: 600,
                     }}
                   >
-                    {demoTrack === 'dubbed' && isPlayingDemo ? <Volume2 size={13} /> : <Play size={13} />}
+                    {demoTrack === 'dubbed' && isPlayingDemo ? <Volume2 size={12} /> : <Play size={12} />}
                     {demoTrack === 'dubbed' && isPlayingDemo ? 'Playing dub' : 'Play dubbed AI'}
                   </button>
                 </div>
 
                 <div style={{
-                  padding: '16px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  borderRadius: 'var(--radius-sm)',
-                  marginBottom: '20px',
+                  padding: '14px 16px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: 'var(--radius-xs)',
+                  marginBottom: '18px',
+                  minHeight: '68px',
                 }}>
-                  <p style={{ fontSize: '14px', color: '#ffffff', fontWeight: 500, lineHeight: 1.5 }}>
+                  <p style={{ fontSize: '13.5px', color: '#ffffff', fontWeight: 500, lineHeight: 1.5 }}>
                     "{demoPhrases[demoLang]}"
                   </p>
                 </div>
@@ -299,7 +311,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <Waveform
                   isPlaying={demoTrack === 'dubbed' && isPlayingDemo}
                   barsCount={32}
-                  height={30}
+                  height={28}
                   color="white"
                   seed={88}
                 />
@@ -308,23 +320,24 @@ export const LandingView: React.FC<LandingViewProps> = ({
 
             {/* Bottom Demo Bar Action */}
             <div style={{
-              padding: '14px 20px',
+              padding: '12px 18px',
               backgroundColor: '#000000',
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
             }}>
-              <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+              <span style={{ fontSize: '11.5px', color: 'rgba(255, 255, 255, 0.55)' }}>
                 Lip-sync preserved • Zero cadence distortion • 44.1 kHz neural output
               </span>
               <button
                 onClick={onStartDubbing}
+                className="btn-arrow-group"
                 style={{
                   background: 'none',
                   border: 'none',
                   color: '#ffffff',
-                  fontSize: '12px',
+                  fontSize: '11.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
@@ -332,7 +345,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   gap: '4px',
                 }}
               >
-                Try with your own video <ArrowRight size={12} />
+                <span>Try with your own video</span>
+                <span className="arrow-symbol">→</span>
               </button>
             </div>
           </div>
@@ -523,14 +537,15 @@ export const LandingView: React.FC<LandingViewProps> = ({
           </p>
           <button
             onClick={onStartDubbing}
-            className="btn btn-white btn-lg"
+            className="btn btn-white btn-lg btn-arrow-group"
             style={{
               padding: '16px 36px',
               fontSize: '16px',
               fontWeight: 600,
             }}
           >
-            Start dubbing →
+            <span>Start dubbing</span>
+            <span className="arrow-symbol">→</span>
           </button>
         </div>
       </section>

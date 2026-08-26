@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { ActiveTab } from '../types';
 
 interface NavbarProps {
@@ -18,47 +18,41 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAuthenticated,
   onLogout,
 }) => {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
-    <header style={{
-      borderBottom: 'var(--border-light)',
-      backgroundColor: 'var(--c-white)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-    }}>
-      <div className="container-xl" style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        height: '68px',
-      }}>
+    <header className="nav-header">
+      <div className="nav-container">
         {/* Brand Logo */}
         <div 
-          onClick={() => onNavigate('landing')} 
+          onClick={() => {
+            onNavigate('landing');
+            setMobileMenuOpen(false);
+          }} 
           style={{
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            gap: '8px',
             userSelect: 'none',
           }}
         >
           <div style={{
-            width: '24px',
-            height: '24px',
+            width: '20px',
+            height: '20px',
             backgroundColor: 'var(--black-100)',
-            borderRadius: 'var(--radius-xs)',
+            borderRadius: '2px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '3px',
+            gap: '2px',
           }}>
-            <div style={{ width: '3px', height: '12px', backgroundColor: 'var(--white-100)', borderRadius: '1px' }}></div>
-            <div style={{ width: '3px', height: '16px', backgroundColor: 'var(--white-100)', borderRadius: '1px' }}></div>
-            <div style={{ width: '3px', height: '8px', backgroundColor: 'var(--white-100)', borderRadius: '1px' }}></div>
+            <div style={{ width: '2px', height: '9px', backgroundColor: 'var(--white-100)', borderRadius: '0.5px' }}></div>
+            <div style={{ width: '2px', height: '14px', backgroundColor: 'var(--white-100)', borderRadius: '0.5px' }}></div>
+            <div style={{ width: '2px', height: '6px', backgroundColor: 'var(--white-100)', borderRadius: '0.5px' }}></div>
           </div>
           <span style={{
-            fontSize: '18px',
+            fontSize: '15.5px',
             fontWeight: 800,
             letterSpacing: '-0.04em',
             color: 'var(--black-100)',
@@ -67,26 +61,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         </div>
 
-        {/* Center Nav Links */}
-        <nav style={{
+        {/* Center Nav Links (Desktop) */}
+        <nav className="nav-desktop-links" style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '32px',
+          gap: '28px',
         }}>
           <button
             onClick={() => onNavigate('landing')}
-            className="btn-ghost"
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '14px',
-              fontWeight: activeTab === 'landing' ? 600 : 500,
-              color: activeTab === 'landing' ? 'var(--black-100)' : 'var(--black-60)',
-              cursor: 'pointer',
-              padding: '6px 0',
-              borderBottom: activeTab === 'landing' ? '2px solid var(--black-100)' : '2px solid transparent',
-              borderRadius: 0,
-            }}
+            className={`nav-link ${activeTab === 'landing' ? 'active' : ''}`}
           >
             Product
           </button>
@@ -98,78 +81,48 @@ export const Navbar: React.FC<NavbarProps> = ({
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }, 50);
             }}
-            className="btn-ghost"
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '14px',
-              fontWeight: 500,
-              color: 'var(--black-60)',
-              cursor: 'pointer',
-              padding: '6px 0',
-              borderRadius: 0,
-            }}
+            className="nav-link"
           >
             How it works
           </button>
           <button
             onClick={() => onNavigate('pricing')}
-            className="btn-ghost"
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '14px',
-              fontWeight: activeTab === 'pricing' ? 600 : 500,
-              color: activeTab === 'pricing' ? 'var(--black-100)' : 'var(--black-60)',
-              cursor: 'pointer',
-              padding: '6px 0',
-              borderBottom: activeTab === 'pricing' ? '2px solid var(--black-100)' : '2px solid transparent',
-              borderRadius: 0,
-            }}
+            className={`nav-link ${activeTab === 'pricing' ? 'active' : ''}`}
           >
             Pricing
           </button>
           {isAuthenticated && (
             <button
               onClick={() => onNavigate('dashboard')}
-              className="btn-ghost"
-              style={{
-                background: 'none',
-                border: 'none',
-                fontSize: '14px',
-                fontWeight: activeTab === 'dashboard' || activeTab === 'studio' ? 600 : 500,
-                color: activeTab === 'dashboard' || activeTab === 'studio' ? 'var(--black-100)' : 'var(--black-60)',
-                cursor: 'pointer',
-                padding: '6px 0',
-                borderBottom: activeTab === 'dashboard' || activeTab === 'studio' ? '2px solid var(--black-100)' : '2px solid transparent',
-                borderRadius: 0,
-              }}
+              className={`nav-link ${activeTab === 'dashboard' || activeTab === 'studio' ? 'active' : ''}`}
             >
               Dashboard
             </button>
           )}
         </nav>
 
-        {/* Right CTA Actions */}
-        <div style={{
+        {/* Right CTA Actions (Desktop) */}
+        <div className="nav-desktop-links" style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '16px',
+          gap: '14px',
         }}>
           {isAuthenticated ? (
             <>
               <button
                 onClick={onLogout}
                 className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--black-60)' }}
+                style={{ color: 'var(--black-60)', fontSize: '13px', fontWeight: 500 }}
               >
                 Sign out
               </button>
               <button
                 onClick={onOpenNewDub}
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary btn-sm btn-arrow-group"
+                style={{ padding: '7px 14px', fontSize: '13px', fontWeight: 600 }}
               >
-                Start dubbing →
+                <span>Start dubbing</span>
+                <span className="arrow-symbol">→</span>
               </button>
             </>
           ) : (
@@ -177,20 +130,210 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={onOpenAuth}
                 className="btn btn-ghost btn-sm"
-                style={{ fontWeight: 500 }}
+                style={{ fontSize: '13px', fontWeight: 500 }}
               >
                 Sign in
               </button>
               <button
                 onClick={onOpenNewDub}
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary btn-sm btn-arrow-group"
+                style={{ padding: '7px 14px', fontSize: '13px', fontWeight: 600 }}
               >
-                Start dubbing →
+                <span>Start dubbing</span>
+                <span className="arrow-symbol">→</span>
               </button>
             </>
           )}
         </div>
+
+        {/* Mobile Menu Toggle Button */}
+        <button
+          className="nav-mobile-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '8px',
+            flexDirection: 'column',
+            gap: '4px',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          aria-label="Toggle navigation menu"
+        >
+          <div style={{
+            width: '18px',
+            height: '1.5px',
+            backgroundColor: 'var(--black-100)',
+            transition: 'transform 180ms ease',
+            transform: mobileMenuOpen ? 'translateY(5.5px) rotate(45deg)' : 'none',
+          }}></div>
+          <div style={{
+            width: '18px',
+            height: '1.5px',
+            backgroundColor: 'var(--black-100)',
+            transition: 'opacity 180ms ease',
+            opacity: mobileMenuOpen ? 0 : 1,
+          }}></div>
+          <div style={{
+            width: '18px',
+            height: '1.5px',
+            backgroundColor: 'var(--black-100)',
+            transition: 'transform 180ms ease',
+            transform: mobileMenuOpen ? 'translateY(-5.5px) rotate(-45deg)' : 'none',
+          }}></div>
+        </button>
       </div>
+
+      {/* Mobile Navigation Drawer */}
+      {mobileMenuOpen && (
+        <div className="nav-mobile-drawer" style={{
+          borderTop: 'var(--border-subtle)',
+          backgroundColor: 'var(--c-white)',
+          padding: '20px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+        }}>
+          <button
+            onClick={() => {
+              onNavigate('landing');
+              setMobileMenuOpen(false);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              textAlign: 'left',
+              fontSize: '15px',
+              fontWeight: activeTab === 'landing' ? 700 : 500,
+              color: 'var(--black-100)',
+              cursor: 'pointer',
+              padding: '6px 0',
+            }}
+          >
+            Product
+          </button>
+          <button
+            onClick={() => {
+              onNavigate('landing');
+              setMobileMenuOpen(false);
+              setTimeout(() => {
+                const el = document.getElementById('how-it-works');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              textAlign: 'left',
+              fontSize: '15px',
+              fontWeight: 500,
+              color: 'var(--black-60)',
+              cursor: 'pointer',
+              padding: '6px 0',
+            }}
+          >
+            How it works
+          </button>
+          <button
+            onClick={() => {
+              onNavigate('pricing');
+              setMobileMenuOpen(false);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              textAlign: 'left',
+              fontSize: '15px',
+              fontWeight: activeTab === 'pricing' ? 700 : 500,
+              color: 'var(--black-100)',
+              cursor: 'pointer',
+              padding: '6px 0',
+            }}
+          >
+            Pricing
+          </button>
+          {isAuthenticated && (
+            <button
+              onClick={() => {
+                onNavigate('dashboard');
+                setMobileMenuOpen(false);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                textAlign: 'left',
+                fontSize: '15px',
+                fontWeight: activeTab === 'dashboard' || activeTab === 'studio' ? 700 : 500,
+                color: 'var(--black-100)',
+                cursor: 'pointer',
+                padding: '6px 0',
+              }}
+            >
+              Dashboard
+            </button>
+          )}
+
+          <div style={{
+            borderTop: 'var(--border-subtle)',
+            paddingTop: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}>
+            {isAuthenticated ? (
+              <>
+                <button
+                  onClick={() => {
+                    onLogout();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ width: '100%', fontSize: '14px' }}
+                >
+                  Sign out
+                </button>
+                <button
+                  onClick={() => {
+                    onOpenNewDub();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="btn btn-primary btn-arrow-group"
+                  style={{ width: '100%', fontSize: '14px', fontWeight: 600 }}
+                >
+                  <span>Start dubbing</span>
+                  <span className="arrow-symbol">→</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    onOpenAuth();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ width: '100%', fontSize: '14px' }}
+                >
+                  Sign in
+                </button>
+                <button
+                  onClick={() => {
+                    onOpenNewDub();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="btn btn-primary btn-arrow-group"
+                  style={{ width: '100%', fontSize: '14px', fontWeight: 600 }}
+                >
+                  <span>Start dubbing</span>
+                  <span className="arrow-symbol">→</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   );
 };
