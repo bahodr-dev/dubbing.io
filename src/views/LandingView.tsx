@@ -567,32 +567,51 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* 3. Features (Minimal Architectural Grid) */}
-      <section style={{
-        padding: '90px 0',
-        borderTop: 'var(--border-light)',
-        backgroundColor: 'var(--black-02)',
-      }}>
-        <div className="container-xl">
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '56px' }}>
-            <div>
-              <span className="mono" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)' }}>
+      {/* 3. Technical / Features Specification Section */}
+      <section className="tech-spec-section">
+        <div className="tech-spec-container">
+          {/* Top Section Header */}
+          <div className="tech-spec-header">
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}>
+              <span className="mono" style={{
+                fontSize: '12.5px',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: 'var(--black-60)',
+              }}>
                 02 / CAPABILITIES
               </span>
-              <h2 style={{ fontSize: '38px', fontWeight: 800, letterSpacing: '-0.04em', marginTop: '6px' }}>
+              <h2 style={{
+                fontSize: 'clamp(40px, 5.5vw, 68px)',
+                fontWeight: 800,
+                letterSpacing: '-0.04em',
+                lineHeight: 0.98,
+                color: 'var(--black-100)',
+                maxWidth: '900px',
+                marginTop: '4px',
+              }}>
                 Engineered for clarity.
               </h2>
+              <p style={{
+                fontSize: 'clamp(16px, 1.8vw, 18px)',
+                color: 'var(--black-65)',
+                maxWidth: '640px',
+                lineHeight: 1.55,
+                marginTop: '16px',
+                fontWeight: 400,
+              }}>
+                Built for high-velocity creators and global enterprises requiring broadcast fidelity.
+              </p>
             </div>
-            <p style={{ fontSize: '14px', color: 'var(--black-60)', maxWidth: '380px', textAlign: 'right' }}>
-              Built for high-velocity creators and global enterprises requiring broadcast fidelity.
-            </p>
           </div>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: '20px',
-          }}>
+          {/* Sequential Editorial Technical Specification Rows */}
+          <div>
             {[
               {
                 tag: 'ACCURACY',
@@ -625,23 +644,21 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 desc: 'Download 1080p/4K master MP4 files, isolated WAV stems, or synchronized SRT/VTT subtitle packages.',
               },
             ].map((feat, idx) => (
-              <div
-                key={idx}
-                className="card"
-                style={{
-                  padding: '28px',
-                  borderRadius: 'var(--radius-sm)',
-                }}
-              >
-                <div className="mono" style={{ fontSize: '11px', color: 'var(--black-40)', marginBottom: '12px', letterSpacing: '0.05em' }}>
-                  {feat.tag}
+              <div key={idx} className="tech-spec-row">
+                {/* Column 1: Existing Identifier Tag */}
+                <div className="tech-spec-tag">
+                  [ {feat.tag} ]
                 </div>
-                <h3 style={{ fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>
+
+                {/* Column 2: Existing Feature Title */}
+                <div className="tech-spec-title">
                   {feat.title}
-                </h3>
-                <p style={{ fontSize: '13.5px', color: 'var(--black-60)', lineHeight: 1.55 }}>
+                </div>
+
+                {/* Column 3: Existing Technical Description */}
+                <div className="tech-spec-desc">
                   {feat.desc}
-                </p>
+                </div>
               </div>
             ))}
           </div>
