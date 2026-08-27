@@ -13,6 +13,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   onSuccess,
 }) => {
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,6 +30,10 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (authMode === 'signup' && !name.trim()) {
+      setError('Please enter your first name.');
+      return;
+    }
     if (!email) {
       setError('Please enter your email address.');
       return;
@@ -53,7 +58,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
     try {
       if (authMode === 'signup') {
-        const res = await api.auth.signup(email, password);
+        const res = await api.auth.signup(email, password, name.trim());
         onSuccess(res.user.email);
       } else {
         const res = await api.auth.signin(email, password);
@@ -266,6 +271,36 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               </div>
             )}
 
+            {/* First Name Field (Pill shape) - Shown first when creating an account */}
+            {authMode === 'signup' && (
+              <div style={{ marginBottom: '12px' }}>
+                <input
+                  id="auth-name"
+                  type="text"
+                  placeholder="First name"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  autoComplete="given-name"
+                  required
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    height: '48px',
+                    borderRadius: '9999px',
+                    border: '1px solid rgba(0, 0, 0, 0.16)',
+                    padding: '0 20px',
+                    fontSize: '14px',
+                    color: '#111827',
+                    backgroundColor: '#ffffff',
+                    outline: 'none',
+                    transition: 'border-color 140ms ease',
+                  }}
+                  onFocus={e => e.currentTarget.style.borderColor = '#000000'}
+                  onBlur={e => e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.16)'}
+                />
+              </div>
+            )}
+
             {/* Email Field (Pill shape) */}
             <div style={{ marginBottom: '12px' }}>
               <input
@@ -276,7 +311,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 onChange={e => setEmail(e.target.value)}
                 autoComplete="email"
                 required
-                autoFocus
+                autoFocus={authMode !== 'signup'}
                 style={{
                   width: '100%',
                   height: '48px',
