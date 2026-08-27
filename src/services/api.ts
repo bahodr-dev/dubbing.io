@@ -1,4 +1,4 @@
-import type { Project } from '../types';
+import type { Project, Voice, TranscriptSegment } from '../types';
 
 export interface UserProfile {
   id: string;
@@ -12,6 +12,22 @@ export interface UserProfile {
 export interface AuthResponse {
   token: string;
   user: UserProfile;
+  message?: string;
+}
+
+export interface UploadResponse {
+  url: string;
+  filename: string;
+  originalName: string;
+  size: string;
+  mimeType: string;
+  message?: string;
+}
+
+export interface GenerateDubbingResponse {
+  transcript: TranscriptSegment[];
+  targetLanguage: string;
+  segmentCount: number;
   message?: string;
 }
 
@@ -60,7 +76,7 @@ class ApiClient {
     return data as T;
   }
 
-  // Authentication Endpoints
+  // 1. AUTHENTICATION
   public auth = {
     signup: async (email: string, password: string, name?: string): Promise<AuthResponse> => {
       const data = await this.request<AuthResponse>('/auth/signup', {
@@ -107,23 +123,126 @@ class ApiClient {
     },
   };
 
-  // Projects Endpoints
+  // 2. MEDIA UPLOADS
+  public media = {
+    upload: async (file: File): Promise<UploadResponse> => {
+      const token = this.getToken();
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${this.baseUrl}/media/upload`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to upload media file.');
+      }
+      return data as UploadResponse;
+    },
+
+    extractUrl: async (url: string): Promise<{ url: string; title: string; thumbnailUrl: string; duration: number }> => {
+      return this.request<{ url: string; title: string; thumbnailUrl: string; duration: number }>('/media/extract-url', {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      });
+    },
+  };
+
+  // 3. AI DUBBING ENGINE & EXPORTS
+  public dubbing = {
+    generate: async (payload: {
+      sourceUrl?: string;
+      originalLanguage?: string;
+      targetLanguage?: string;
+      title?: string;
+      duration?: number;
+    }): Promise<GenerateDubbingResponse> => {
+      return this.request<GenerateDubbingResponse>('/dubbing/generate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    getExportUrl: (projectId: string, format: 'srt' | 'vtt' | 'json'): string => {
+      return `${this.baseUrl}/dubbing/export/${projectId}/${format}`;
+    },
+
+    downloadSubtitles: (projectId: string, format: 'srt' | 'vtt' | 'json') => {
+      const url = `${this.baseUrl}/dubbing/export/${projectId}/${format}`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `subtitles.${format}`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+  };
+
+  // 4. VOICES STUDIO
+  public voices = {
+    list: async (language?: string, gender?: string): Promise<{ voices: Voice[] }> => {
+      const params = new URLSearchParams();
+      if (language) params.append('language', language);
+      if (gender) params.append('gender', gender);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return this.request<{ voices: Voice[] }>(`/voices${query}`);
+    },
+
+    clone: async (voiceData: {
+      name: string;
+      language?: string;
+      languageCode?: string;
+      gender?: 'male' | 'female' | 'neutral';
+      style?: Voice['style'];
+      tone?: string;
+      tags?: string[];
+      previewUrl?: string;
+    }): Promise<{ voice: Voice; message: string }> => {
+      return this.request<{ voice: Voice; message: string }>('/voices/clone', {
+        method: 'POST',
+        body: JSON.stringify(voiceData),
+      });
+    },
+  };
+
+  // 5. PROJECTS MANAGEMENT
   public projects = {
     list: async (): Promise<{ projects: Project[] }> => {
       return this.request<{ projects: Project[] }>('/projects');
     },
 
-    create: async (project: Project): Promise<{ project: Project }> => {
+    create: async (project: Partial<Project>): Promise<{ project: Project }> => {
       return this.request<{ project: Project }>('/projects', {
         method: 'POST',
         body: JSON.stringify(project),
       });
     },
 
-    update: async (id: string, updates: Partial<Project>): Promise<{ message: string }> => {
-      return this.request<{ message: string }>(`/projects/${id}`, {
+    update: async (id: string, updates: Partial<Project>): Promise<{ project?: Project; message: string }> => {
+      return this.request<{ project?: Project; message: string }>(`/projects/${id}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
+      });
+    },
+
+    updateTranscript: async (id: string, transcript: TranscriptSegment[]): Promise<{ message: string }> => {
+      return this.request<{ message: string }>(`/projects/${id}/transcript`, {
+        method: 'PUT',
+        body: JSON.stringify({ transcript }),
+      });
+    },
+
+    duplicate: async (id: string): Promise<{ project: Project; message: string }> => {
+      return this.request<{ project: Project; message: string }>(`/projects/${id}/duplicate`, {
+        method: 'POST',
       });
     },
 

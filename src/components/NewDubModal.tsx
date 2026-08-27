@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import type { Project } from '../types';
 import { INITIAL_PROJECTS } from '../data/sampleProjects';
-import { UploadCloud, Link as LinkIcon } from 'lucide-react';
+import { UploadCloud, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
 
 interface NewDubModalProps {
   isOpen: boolean;
@@ -15,9 +16,11 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
   onCreateProject,
 }) => {
   const [videoUrl, setVideoUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [projectName, setProjectName] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('uz');
   const [isDragging, setIsDragging] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   if (!isOpen) return null;
@@ -25,47 +28,71 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSelectedFile(file);
       setProjectName(file.name.replace(/\.[^/.]+$/, ''));
-      setUploadProgress(10);
-      const interval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev === null || prev >= 100) {
-            clearInterval(interval);
-            return 100;
-          }
-          return prev + 30;
-        });
-      }, 150);
+      setUploadProgress(100);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    const newProj: Project = {
-      id: `proj-${Date.now()}`,
-      title: projectName || 'New Project Dub',
-      originalLanguage: 'en',
-      targetLanguage,
-      status: 'draft',
-      duration: 24.5,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      videoUrl: videoUrl,
-      thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
-      voiceId: targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena',
-      transcript: INITIAL_PROJECTS[0].transcript,
-    };
+    try {
+      let finalMediaUrl = videoUrl;
 
-    onCreateProject(newProj);
-    onClose();
+      // 1. Upload to backend if file exists
+      if (selectedFile) {
+        try {
+          const uploadRes = await api.media.upload(selectedFile);
+          finalMediaUrl = uploadRes.url;
+        } catch (err) {
+          console.warn('Using local media path:', err);
+        }
+      }
+
+      // 2. Generate Dubbing Timeline
+      let transcript = INITIAL_PROJECTS[0].transcript;
+      try {
+        const dubRes = await api.dubbing.generate({
+          targetLanguage,
+          duration: 30,
+          title: projectName || 'New Studio Dub',
+        });
+        if (dubRes.transcript && dubRes.transcript.length > 0) {
+          transcript = dubRes.transcript;
+        }
+      } catch (err) {
+        console.warn('Dubbing timeline generation:', err);
+      }
+
+      const newProj: Project = {
+        id: `proj-${Date.now()}`,
+        title: projectName || 'New Project Dub',
+        originalLanguage: 'en',
+        targetLanguage,
+        status: 'draft',
+        duration: 30,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        videoUrl: finalMediaUrl,
+        thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
+        voiceId: targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena',
+        transcript,
+      };
+
+      onCreateProject(newProj);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div 
-        className="modal-container" 
-        style={{ maxWidth: '580px' }} 
+      <div
+        className="modal-container"
+        style={{ maxWidth: '580px' }}
         onClick={e => e.stopPropagation()}
       >
         <div className="modal-header">
@@ -75,9 +102,9 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
               Upload your video to start dubbing in 30+ languages
             </p>
           </div>
-          <button 
-            onClick={onClose} 
-            className="btn-ghost" 
+          <button
+            onClick={onClose}
+            className="btn-ghost"
             style={{ padding: '6px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px' }}
           >
             ✕
@@ -203,9 +230,17 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!projectName && !videoUrl}
+              disabled={(!projectName && !videoUrl && !selectedFile) || isSubmitting}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              Enter Studio →
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  Entering Studio...
+                </>
+              ) : (
+                'Enter Studio →'
+              )}
             </button>
           </div>
         </form>

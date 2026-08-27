@@ -47,7 +47,9 @@
   --transition-normal: 240ms var(--ease-spring);
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -55,7 +57,34 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-html, body, button, input, select, textarea, optgroup, option, label, table, th, td, a, span, p, h1, h2, h3, h4, h5, h6, div, section, article, aside, nav, header, footer {
+html,
+body,
+button,
+input,
+select,
+textarea,
+optgroup,
+option,
+label,
+table,
+th,
+td,
+a,
+span,
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+div,
+section,
+article,
+aside,
+nav,
+header,
+footer {
   font-family: var(--font-sans);
 }
 
@@ -69,12 +98,20 @@ body {
   overflow-x: hidden;
 }
 
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
   font-family: inherit;
 }
 
 /* Typography Scale */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-sans);
   font-weight: 700;
   letter-spacing: -0.035em;
@@ -82,7 +119,10 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--black-100);
 }
 
-.mono, .mono *, .tech-spec-tag, .tech-spec-tag * {
+.mono,
+.mono *,
+.tech-spec-tag,
+.tech-spec-tag * {
   font-family: var(--font-mono) !important;
   letter-spacing: -0.02em;
 }
@@ -304,7 +344,7 @@ h1, h2, h3, h4, h5, h6 {
   opacity: 0;
   transform: scale(0.4) rotate(-90deg);
   transition: opacity 180ms ease,
-              transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -317,7 +357,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Inputs & Form Elements (Soft Rounded 12px) */
-.input, .select, .textarea {
+.input,
+.select,
+.textarea {
   width: 100%;
   font-family: var(--font-sans);
   font-size: 14px;
@@ -330,12 +372,15 @@ h1, h2, h3, h4, h5, h6 {
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.input:focus, .select:focus, .textarea:focus {
+.input:focus,
+.select:focus,
+.textarea:focus {
   border-color: var(--black-100);
   box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
 }
 
-.input::placeholder, .textarea::placeholder {
+.input::placeholder,
+.textarea::placeholder {
   color: var(--black-40);
 }
 
@@ -453,8 +498,13 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Keyframe Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes modalSlideUp {
@@ -462,6 +512,7 @@ h1, h2, h3, h4, h5, h6 {
     opacity: 0;
     transform: translateY(16px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -473,6 +524,7 @@ h1, h2, h3, h4, h5, h6 {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -480,13 +532,25 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulseDot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
 }
 
 /* =========================================================================
@@ -510,7 +574,7 @@ h1, h2, h3, h4, h5, h6 {
   justify-content: space-between;
   padding: 48px;
   background-color: #030303;
-  background-image: 
+  background-image:
     linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.35) 100%),
     url('/signup-bg.png');
   background-size: cover;
@@ -683,95 +747,4 @@ h1, h2, h3, h4, h5, h6 {
   .nav-mobile-drawer {
     display: none !important;
   }
-}
-
-/* ========================================================================= */
-/* Custom Floating Tooltips                                                  */
-/* ========================================================================= */
-.tooltip-trigger {
-  position: relative;
-  display: block;
-  width: 100%;
-}
-
-.tooltip-trigger .tooltip-content {
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
-  background-color: #0f172a;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'Figtree', sans-serif;
-  padding: 6px 11px;
-  border-radius: 7px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 130ms cubic-bezier(0.16, 1, 0.3, 1), transform 130ms cubic-bezier(0.16, 1, 0.3, 1), visibility 130ms ease;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
-  z-index: 999999;
-}
-
-.tooltip-trigger .tooltip-content::before {
-  content: '';
-  position: absolute;
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  border-width: 5px 6px 5px 0;
-  border-style: solid;
-  border-color: transparent #0f172a transparent transparent;
-}
-
-.tooltip-trigger:hover .tooltip-content {
-  opacity: 1 !important;
-  visibility: visible !important;
-  transform: translateY(-50%) translateX(0) !important;
-}
-
-.tooltip-top {
-  position: relative;
-  display: inline-flex;
-}
-
-.tooltip-top .tooltip-content {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  top: auto;
-  transform: translateX(-50%) translateY(4px);
-  background-color: #0f172a;
-  color: #ffffff;
-  font-size: 11.5px;
-  font-weight: 600;
-  font-family: 'Figtree', sans-serif;
-  padding: 5px 10px;
-  border-radius: 6px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 130ms cubic-bezier(0.16, 1, 0.3, 1), transform 130ms cubic-bezier(0.16, 1, 0.3, 1), visibility 130ms ease;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
-  z-index: 999999;
-}
-
-.tooltip-top .tooltip-content::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 100%;
-  transform: translateX(-50%);
-  border-width: 5px 5px 0 5px;
-  border-style: solid;
-  border-color: #0f172a transparent transparent transparent;
-}
-
-.tooltip-top:hover .tooltip-content {
-  opacity: 1 !important;
-  visibility: visible !important;
-  transform: translateX(-50%) translateY(0) !important;
 }

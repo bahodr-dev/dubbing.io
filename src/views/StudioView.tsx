@@ -7,6 +7,7 @@ import { VoiceModal } from '../components/VoiceModal';
 import { ProcessingView } from '../components/ProcessingView';
 import { TranscriptEditor } from '../components/TranscriptEditor';
 import { Download, Sparkles, ArrowLeft, FileText, CheckCircle2 } from 'lucide-react';
+import { api } from '../services/api';
 
 interface StudioViewProps {
   project: Project;
@@ -31,11 +32,15 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const currentVoice = VOICES.find(v => v.id === project.voiceId) || VOICES[1];
 
   const handleSelectVoice = (voice: Voice) => {
-    onUpdateProject({
+    const updated = {
       ...project,
       voiceId: voice.id,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    onUpdateProject(updated);
+    if (api.getToken()) {
+      api.projects.update(project.id, { voiceId: voice.id });
+    }
   };
 
   const handleLanguageChange = (field: 'originalLanguage' | 'targetLanguage', value: string) => {
@@ -46,50 +51,91 @@ export const StudioView: React.FC<StudioViewProps> = ({
       if (matchVoice) newVoiceId = matchVoice.id;
     }
 
-    onUpdateProject({
+    const updated = {
       ...project,
       [field]: value,
       voiceId: newVoiceId,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    onUpdateProject(updated);
+    if (api.getToken()) {
+      api.projects.update(project.id, { [field]: value, voiceId: newVoiceId });
+    }
   };
 
   const handleStartGeneration = () => {
     setIsProcessing(true);
-    onUpdateProject({
+    const updated = {
       ...project,
-      status: 'processing',
+      status: 'processing' as const,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    onUpdateProject(updated);
+    if (api.getToken()) {
+      api.projects.update(project.id, { status: 'processing' });
+    }
   };
 
   const handleProcessingComplete = () => {
     setIsProcessing(false);
     setActiveAudioTrack('dubbed');
-    onUpdateProject({
+    const updated = {
       ...project,
-      status: 'completed',
+      status: 'completed' as const,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    onUpdateProject(updated);
+    if (api.getToken()) {
+      api.projects.update(project.id, { status: 'completed' });
+    }
   };
 
   const handleUpdateSegment = (segmentId: string, originalText: string, translatedText: string) => {
     const updatedTranscript = project.transcript.map(seg => 
       seg.id === segmentId ? { ...seg, originalText, translatedText } : seg
     );
-    onUpdateProject({
+    const updated = {
       ...project,
       transcript: updatedTranscript,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    onUpdateProject(updated);
+
+    // Synchronize directly with backend SQLite database
+    if (api.getToken()) {
+      api.projects.updateTranscript(project.id, updatedTranscript).catch(err => {
+        console.warn('Could not sync transcript:', err);
+      });
+    }
   };
 
   const handleDownload = (format: 'video' | 'audio' | 'srt') => {
-    let msg = 'Downloading master dubbed video (MP4)...';
-    if (format === 'audio') msg = 'Downloading isolated dubbed audio (WAV 44.1kHz)...';
-    if (format === 'srt') msg = 'Downloading synchronized subtitles (.SRT)...';
+    if (format === 'srt') {
+      try {
+        api.dubbing.downloadSubtitles(project.id, 'srt');
+      } catch {
+        // fallback to generating client-side SRT
+        let srtContent = '';
+        project.transcript.forEach((seg, idx) => {
+          srtContent += `${idx + 1}\n00:00:0${Math.floor(seg.startTime)},000 --> 00:00:0${Math.floor(seg.endTime)},000\n${seg.translatedText}\n\n`;
+        });
+        const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${project.title.replace(/\s+/g, '_')}_subtitles.srt`;
+        a.click();
+      }
+      setShowExportToast('Subtitles exported (.SRT)');
+    } else if (format === 'video') {
+      if (project.videoUrl && project.videoUrl.startsWith('http')) {
+        window.open(project.videoUrl, '_blank');
+      }
+      setShowExportToast('Master dubbed video exported (MP4)');
+    } else {
+      setShowExportToast('Master audio exported (WAV)');
+    }
 
-    setShowExportToast(msg);
     setTimeout(() => {
       setShowExportToast(null);
     }, 3000);

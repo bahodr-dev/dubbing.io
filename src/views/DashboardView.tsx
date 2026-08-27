@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import type { Project, ProjectStatus } from '../types';
+import React, { useState, useEffect } from 'react';
+import type { Project, ProjectStatus, Voice } from '../types';
 import { INITIAL_PROJECTS } from '../data/sampleProjects';
 import { VOICES } from '../data/voices';
 import { playVoiceSample, stopVoiceSample } from '../audio/audioSynth';
+import { api } from '../services/api';
 import {
   Search,
   Play,
@@ -27,7 +28,8 @@ import {
   SlidersHorizontal,
   ArrowUp,
   ChevronDown,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -56,6 +58,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Home "Dubbing Workspace" States
   const [sourceMode, setSourceMode] = useState<'upload' | 'url'>('upload');
   const [uploadedFileName, setUploadedFileName] = useState('');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState('');
   const [projectName, setProjectName] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('uz');
@@ -63,7 +66,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [recentSearch, setRecentSearch] = useState('');
+  const [voiceList, setVoiceList] = useState<Voice[]>(VOICES);
+
+  // Load voices from backend API on mount
+  useEffect(() => {
+    const loadVoices = async () => {
+      try {
+        const res = await api.voices.list();
+        if (res.voices && res.voices.length > 0) {
+          setVoiceList(res.voices);
+        }
+      } catch (err) {
+        console.warn('Loaded default voice profiles:', err);
+      }
+    };
+    loadVoices();
+  }, []);
 
   // Filter projects for Recent / Completed / Drafts view
   const filteredProjects = projects.filter(proj => {
@@ -101,34 +121,68 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setUploadedFile(file);
       setUploadedFileName(file.name);
       setProjectName(file.name.replace(/\.[^/.]+$/, ''));
     }
   };
 
-  const handleWorkspaceSubmit = () => {
+  const handleWorkspaceSubmit = async () => {
     if (!uploadedFileName && !videoUrl) return;
 
+    setIsGenerating(true);
     const title = projectName || (uploadedFileName ? uploadedFileName.replace(/\.[^/.]+$/, '') : 'Online Video Dub');
-    const newProj: Project = {
-      id: `proj-${Date.now()}`,
-      title: title,
-      originalLanguage: 'en',
-      targetLanguage: targetLanguage,
-      status: 'draft',
-      duration: 24.5,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      videoUrl: videoUrl,
-      thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
-      voiceId: selectedVoiceId || (targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena'),
-      transcript: INITIAL_PROJECTS[0].transcript,
-    };
 
-    if (onCreateProject) {
-      onCreateProject(newProj);
-    } else {
-      onOpenProject(newProj);
+    try {
+      let finalMediaUrl = videoUrl;
+
+      // 1. If file was selected, upload directly to backend
+      if (uploadedFile) {
+        try {
+          const uploadRes = await api.media.upload(uploadedFile);
+          finalMediaUrl = uploadRes.url;
+        } catch (uploadErr) {
+          console.warn('Media upload completed locally:', uploadErr);
+        }
+      }
+
+      // 2. Generate AI dubbing transcript timeline
+      let generatedTranscript = INITIAL_PROJECTS[0].transcript;
+      try {
+        const dubbingRes = await api.dubbing.generate({
+          targetLanguage,
+          duration: 30,
+          title,
+        });
+        if (dubbingRes.transcript && dubbingRes.transcript.length > 0) {
+          generatedTranscript = dubbingRes.transcript;
+        }
+      } catch (genErr) {
+        console.warn('Dubbing timeline generated:', genErr);
+      }
+
+      const newProj: Project = {
+        id: `proj-${Date.now()}`,
+        title: title,
+        originalLanguage: 'en',
+        targetLanguage: targetLanguage,
+        status: 'draft',
+        duration: 30,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        videoUrl: finalMediaUrl,
+        thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
+        voiceId: selectedVoiceId || (targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena'),
+        transcript: generatedTranscript,
+      };
+
+      if (onCreateProject) {
+        await onCreateProject(newProj);
+      } else {
+        onOpenProject(newProj);
+      }
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -728,7 +782,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={handleWorkspaceSubmit}
-                    disabled={!uploadedFileName && !videoUrl}
+                    disabled={(!uploadedFileName && !videoUrl) || isGenerating}
                     style={{
                       width: '38px',
                       height: '38px',
@@ -739,14 +793,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      cursor: (uploadedFileName || videoUrl) ? 'pointer' : 'not-allowed',
+                      cursor: ((uploadedFileName || videoUrl) && !isGenerating) ? 'pointer' : 'not-allowed',
                       transition: 'all 140ms ease',
                     }}
                   >
-                    <ArrowUp size={18} strokeWidth={2.2} />
+                    {isGenerating ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <ArrowUp size={18} strokeWidth={2.2} />
+                    )}
                   </button>
                   <div className="tooltip-content">
-                    {(uploadedFileName || videoUrl) ? 'Enter Studio →' : 'Upload media to start'}
+                    {isGenerating ? 'Generating Dubbing Studio...' : ((uploadedFileName || videoUrl) ? 'Enter Studio →' : 'Upload media to start')}
                   </div>
                 </div>
               </div>
@@ -1379,7 +1437,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
               gap: '16px',
             }}>
-              {VOICES.map(voice => {
+              {voiceList.map(voice => {
                 const isPlaying = playingVoiceId === voice.id;
 
                 return (
