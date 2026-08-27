@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { ActiveTab } from '../types';
-import { Check, X, Shield, KeyRound, Fingerprint } from 'lucide-react';
+import { Check, X, Shield, KeyRound, Fingerprint, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
 
 interface SignUpViewProps {
@@ -244,30 +244,80 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
           <form onSubmit={handleSubmit}>
             {error && (
               <div style={{
-                padding: '10px 14px',
-                border: '1px solid #000000',
-                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px',
+                padding: '11px 14px',
+                backgroundColor: '#FEF2F2',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: '10px',
                 fontSize: '13px',
+                lineHeight: 1.45,
+                color: '#991B1B',
                 marginBottom: '16px',
-                borderRadius: '8px',
-                color: '#000000',
+                animation: 'fadeIn 160ms cubic-bezier(0.16, 1, 0.3, 1)',
+                boxShadow: '0 1px 3px rgba(239, 68, 68, 0.05)',
               }}>
-                {error}
+                <AlertCircle size={16} color="#DC2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ flex: 1 }}>
+                  <span>{error}</span>
+                  {error.toLowerCase().includes('sign up') && authMode === 'signin' && (
+                    <span 
+                      onClick={() => {
+                        setAuthMode('signup');
+                        setError('');
+                      }}
+                      style={{
+                        display: 'block',
+                        marginTop: '4px',
+                        fontWeight: 600,
+                        color: '#B91C1C',
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Create an account now →
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setError('')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    color: 'rgba(153, 27, 27, 0.6)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: '2px',
+                  }}
+                  title="Dismiss"
+                >
+                  <X size={14} />
+                </button>
               </div>
             )}
 
             {resetSent && (
               <div style={{
-                padding: '10px 14px',
-                border: '1px solid #16a34a',
-                backgroundColor: 'rgba(22, 163, 74, 0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '11px 14px',
+                backgroundColor: '#F0FDF4',
+                border: '1px solid rgba(34, 197, 94, 0.25)',
+                borderRadius: '10px',
                 fontSize: '13px',
+                color: '#166534',
                 marginBottom: '16px',
-                borderRadius: '8px',
-                color: '#16a34a',
                 fontWeight: 500,
+                boxShadow: '0 1px 3px rgba(34, 197, 94, 0.06)',
               }}>
-                Password reset link has been sent to your email!
+                <Check size={16} color="#16A34A" style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>Password reset link has been sent to your email!</span>
               </div>
             )}
 
