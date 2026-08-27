@@ -79,9 +79,9 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
           display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '4px 12px',
+          padding: '5px 14px',
           border: 'var(--border-light)',
-          borderRadius: 'var(--radius-xs)',
+          borderRadius: 'var(--radius-pill)',
           fontSize: '12px',
           fontWeight: 600,
           textTransform: 'uppercase',
@@ -114,7 +114,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
         <div style={{
           height: '6px',
           backgroundColor: 'var(--black-10)',
-          borderRadius: '3px',
+          borderRadius: 'var(--radius-pill)',
           overflow: 'hidden',
         }}>
           <div style={{
@@ -154,9 +154,9 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: 'var(--radius-xs)',
+                  width: '26px',
+                  height: '26px',
+                  borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -213,7 +213,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
         backgroundColor: 'var(--black-100)',
         color: 'var(--white-100)',
         padding: '16px 20px',
-        borderRadius: 'var(--radius-sm)',
+        borderRadius: 'var(--radius-md)',
         fontFamily: 'var(--font-mono)',
         fontSize: '12px',
       }}>

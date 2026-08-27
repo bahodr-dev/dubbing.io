@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Sparkles } from 'lucide-react';
 import type { ActiveTab } from '../types';
 
 interface NavbarProps {
@@ -14,21 +15,32 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   onNavigate,
   onOpenAuth,
-  onOpenNewDub,
   isAuthenticated,
   onLogout,
 }) => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleLogoClick = () => {
     onNavigate(isAuthenticated ? 'dashboard' : 'signup');
-    setMobileMenuOpen(false);
+    setIsAccountMenuOpen(false);
   };
 
   return (
     <header className="nav-header">
-      <div className="nav-container">
-        {/* Brand Logo */}
+      <div className="nav-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+        {/* Brand Logo (Always on the Left) */}
         <div 
           onClick={handleLogoClick}
           style={{
@@ -63,75 +75,257 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         </div>
 
-        {/* Center Nav Links (Desktop) */}
-        <nav className="nav-desktop-links" style={{
+        {/* Right Action: User Account Dropdown */}
+        <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '28px',
+          gap: '12px',
+          position: 'relative',
         }}>
           {isAuthenticated ? (
-            <>
+            /* User Account Popover Trigger */
+            <div ref={dropdownRef} style={{ position: 'relative' }}>
               <button
-                onClick={() => onNavigate('dashboard')}
-                className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
+                type="button"
+                onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '5px 14px 5px 6px',
+                  backgroundColor: isAccountMenuOpen ? 'var(--black-05)' : 'var(--c-white)',
+                  border: 'var(--border-light)',
+                  borderRadius: 'var(--radius-pill)',
+                  cursor: 'pointer',
+                  transition: 'all var(--transition-fast)',
+                  outline: 'none',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = 'var(--black-40)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = 'var(--black-12)';
+                }}
               >
-                Dashboard
-              </button>
-              <button
-                onClick={() => onNavigate('studio')}
-                className={`nav-link ${activeTab === 'studio' ? 'active' : ''}`}
-              >
-                Studio
-              </button>
-              <button
-                onClick={() => onNavigate('pricing')}
-                className={`nav-link ${activeTab === 'pricing' ? 'active' : ''}`}
-              >
-                Pricing
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => onNavigate('signup')}
-                className={`nav-link ${activeTab === 'signup' ? 'active' : ''}`}
-              >
-                Sign Up
-              </button>
-              <button
-                onClick={() => onNavigate('pricing')}
-                className={`nav-link ${activeTab === 'pricing' ? 'active' : ''}`}
-              >
-                Pricing
-              </button>
-            </>
-          )}
-        </nav>
+                {/* User Avatar */}
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--black-100)',
+                  color: 'var(--white-100)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  B
+                </div>
 
-        {/* Right CTA Actions (Desktop) */}
-        <div className="nav-desktop-links" style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '14px',
-        }}>
-          {isAuthenticated ? (
-            <>
-              <button
-                onClick={onLogout}
-                className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--black-60)', fontSize: '13px', fontWeight: 500 }}
-              >
-                Sign out
+                <span style={{
+                  fontSize: '13.5px',
+                  fontWeight: 600,
+                  color: 'var(--black-100)',
+                }}>
+                  Account
+                </span>
+
+                <ChevronDown 
+                  size={14} 
+                  color="var(--black-60)" 
+                  style={{
+                    transition: 'transform 180ms ease',
+                    transform: isAccountMenuOpen ? 'rotate(180deg)' : 'none',
+                  }} 
+                />
               </button>
-              <button
-                onClick={onOpenNewDub}
-                className="btn btn-primary btn-sm btn-arrow-group"
-                style={{ padding: '7px 14px', fontSize: '13px', fontWeight: 600 }}
-              >
-                <span>Start dubbing</span>
-                <span className="arrow-symbol">→</span>
-              </button>
-            </>
+
+              {/* Dropdown Menu Popover */}
+              {isAccountMenuOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  width: '240px',
+                  backgroundColor: 'var(--c-white)',
+                  border: 'var(--border-light)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: '0 12px 32px rgba(0, 0, 0, 0.12)',
+                  padding: '8px',
+                  zIndex: 1000,
+                  animation: 'modalSlideUp 160ms cubic-bezier(0.16, 1, 0.3, 1)',
+                }}>
+                  {/* User Profile Info Header */}
+                  <div style={{
+                    padding: '10px 12px',
+                    borderBottom: 'var(--border-light)',
+                    marginBottom: '6px',
+                  }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--black-100)' }}>
+                      Bahodir S.
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--black-60)', marginTop: '1px' }}>
+                      bahodir@dubbing.io
+                    </div>
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      marginTop: '6px',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-pill)',
+                      backgroundColor: 'var(--black-05)',
+                      border: 'var(--border-subtle)',
+                      fontSize: '10.5px',
+                      fontWeight: 600,
+                      color: 'var(--black-80)',
+                    }}>
+                      <Sparkles size={10} />
+                      Creator Plan • 42/60m
+                    </div>
+                  </div>
+
+                  {/* Navigation Items */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate('pricing');
+                        setIsAccountMenuOpen(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 12px',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: activeTab === 'pricing' ? 'var(--black-05)' : 'transparent',
+                        color: 'var(--black-100)',
+                        fontSize: '13px',
+                        fontWeight: activeTab === 'pricing' ? 600 : 500,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background-color var(--transition-fast)',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--black-05)'}
+                      onMouseLeave={e => {
+                        if (activeTab !== 'pricing') e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <CreditCard size={15} color="var(--black-60)" />
+                      <span>Pricing & Plans</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate('dashboard');
+                        setIsAccountMenuOpen(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 12px',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: activeTab === 'dashboard' ? 'var(--black-05)' : 'transparent',
+                        color: 'var(--black-100)',
+                        fontSize: '13px',
+                        fontWeight: activeTab === 'dashboard' ? 600 : 500,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background-color var(--transition-fast)',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--black-05)'}
+                      onMouseLeave={e => {
+                        if (activeTab !== 'dashboard') e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <LayoutDashboard size={15} color="var(--black-60)" />
+                      <span>Dashboard</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate('studio');
+                        setIsAccountMenuOpen(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 12px',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: activeTab === 'studio' ? 'var(--black-05)' : 'transparent',
+                        color: 'var(--black-100)',
+                        fontSize: '13px',
+                        fontWeight: activeTab === 'studio' ? 600 : 500,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background-color var(--transition-fast)',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--black-05)'}
+                      onMouseLeave={e => {
+                        if (activeTab !== 'studio') e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <Film size={15} color="var(--black-60)" />
+                      <span>Studio Editor</span>
+                    </button>
+                  </div>
+
+                  {/* Divider & Sign out */}
+                  <div style={{
+                    borderTop: 'var(--border-light)',
+                    marginTop: '6px',
+                    paddingTop: '6px',
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        onLogout();
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 12px',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'transparent',
+                        color: 'var(--black-80)',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background-color var(--transition-fast)',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.backgroundColor = 'var(--black-05)';
+                        e.currentTarget.style.color = 'var(--black-100)';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                        e.currentTarget.style.color = 'var(--black-80)';
+                      }}
+                    >
+                      <LogOut size={15} color="var(--black-60)" />
+                      <span>Sign out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <button
@@ -144,7 +338,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => onNavigate('signup')}
                 className="btn btn-primary btn-sm btn-arrow-group"
-                style={{ padding: '7px 14px', fontSize: '13px', fontWeight: 600 }}
+                style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 600 }}
               >
                 <span>Create account</span>
                 <span className="arrow-symbol">→</span>
@@ -152,194 +346,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </>
           )}
         </div>
-
-        {/* Mobile Menu Toggle Button */}
-        <button
-          className="nav-mobile-toggle"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '8px',
-            flexDirection: 'column',
-            gap: '4px',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          aria-label="Toggle navigation menu"
-        >
-          <div style={{
-            width: '18px',
-            height: '1.5px',
-            backgroundColor: 'var(--black-100)',
-            transition: 'transform 180ms ease',
-            transform: mobileMenuOpen ? 'translateY(5.5px) rotate(45deg)' : 'none',
-          }}></div>
-          <div style={{
-            width: '18px',
-            height: '1.5px',
-            backgroundColor: 'var(--black-100)',
-            transition: 'opacity 180ms ease',
-            opacity: mobileMenuOpen ? 0 : 1,
-          }}></div>
-          <div style={{
-            width: '18px',
-            height: '1.5px',
-            backgroundColor: 'var(--black-100)',
-            transition: 'transform 180ms ease',
-            transform: mobileMenuOpen ? 'translateY(-5.5px) rotate(-45deg)' : 'none',
-          }}></div>
-        </button>
       </div>
-
-      {/* Mobile Navigation Drawer */}
-      {mobileMenuOpen && (
-        <div className="nav-mobile-drawer" style={{
-          borderTop: 'var(--border-subtle)',
-          backgroundColor: 'var(--c-white)',
-          padding: '20px 24px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
-        }}>
-          {isAuthenticated ? (
-            <>
-              <button
-                onClick={() => {
-                  onNavigate('dashboard');
-                  setMobileMenuOpen(false);
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  textAlign: 'left',
-                  fontSize: '15px',
-                  fontWeight: activeTab === 'dashboard' ? 700 : 500,
-                  color: 'var(--black-100)',
-                  cursor: 'pointer',
-                  padding: '6px 0',
-                }}
-              >
-                Dashboard
-              </button>
-              <button
-                onClick={() => {
-                  onNavigate('studio');
-                  setMobileMenuOpen(false);
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  textAlign: 'left',
-                  fontSize: '15px',
-                  fontWeight: activeTab === 'studio' ? 700 : 500,
-                  color: 'var(--black-100)',
-                  cursor: 'pointer',
-                  padding: '6px 0',
-                }}
-              >
-                Studio
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => {
-                onNavigate('signup');
-                setMobileMenuOpen(false);
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                textAlign: 'left',
-                fontSize: '15px',
-                fontWeight: activeTab === 'signup' ? 700 : 500,
-                color: 'var(--black-100)',
-                cursor: 'pointer',
-                padding: '6px 0',
-              }}
-            >
-              Sign Up
-            </button>
-          )}
-          <button
-            onClick={() => {
-              onNavigate('pricing');
-              setMobileMenuOpen(false);
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              textAlign: 'left',
-              fontSize: '15px',
-              fontWeight: activeTab === 'pricing' ? 700 : 500,
-              color: 'var(--black-100)',
-              cursor: 'pointer',
-              padding: '6px 0',
-            }}
-          >
-            Pricing
-          </button>
-
-          <div style={{
-            borderTop: 'var(--border-subtle)',
-            paddingTop: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}>
-            {isAuthenticated ? (
-              <>
-                <button
-                  onClick={() => {
-                    onLogout();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="btn btn-secondary"
-                  style={{ width: '100%', fontSize: '14px' }}
-                >
-                  Sign out
-                </button>
-                <button
-                  onClick={() => {
-                    onOpenNewDub();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="btn btn-primary btn-arrow-group"
-                  style={{ width: '100%', fontSize: '14px', fontWeight: 600 }}
-                >
-                  <span>Start dubbing</span>
-                  <span className="arrow-symbol">→</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => {
-                    onOpenAuth();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="btn btn-secondary"
-                  style={{ width: '100%', fontSize: '14px' }}
-                >
-                  Sign in
-                </button>
-                <button
-                  onClick={() => {
-                    onNavigate('signup');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="btn btn-primary btn-arrow-group"
-                  style={{ width: '100%', fontSize: '14px', fontWeight: 600 }}
-                >
-                  <span>Create account</span>
-                  <span className="arrow-symbol">→</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </header>
   );
 };

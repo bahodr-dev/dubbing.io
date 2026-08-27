@@ -152,7 +152,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               gap: '10px',
               backgroundColor: 'var(--c-white)',
               border: '1px solid rgba(0, 0, 0, 0.16)',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--radius-pill)',
               fontFamily: 'var(--font-sans)',
               fontSize: '14.5px',
               fontWeight: 500,
@@ -199,7 +199,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 backgroundColor: 'rgba(0, 0, 0, 0.04)',
                 fontSize: '13px',
                 marginBottom: '18px',
-                borderRadius: 'var(--radius-xs)',
+                borderRadius: 'var(--radius-sm)',
                 color: 'var(--black-100)',
               }}>
                 {error}
@@ -275,7 +275,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 height: '50px',
                 fontSize: '14.5px',
                 fontWeight: 600,
-                borderRadius: 'var(--radius-sm)',
+                borderRadius: 'var(--radius-pill)',
               }}
             >
               Create account

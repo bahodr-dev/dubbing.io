@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Project } from '../types';
 import { INITIAL_PROJECTS } from '../data/sampleProjects';
-import { UploadCloud, Link as LinkIcon, Film } from 'lucide-react';
+import { UploadCloud, Link as LinkIcon } from 'lucide-react';
 
 interface NewDubModalProps {
   isOpen: boolean;
@@ -17,17 +17,10 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
   const [videoUrl, setVideoUrl] = useState('');
   const [projectName, setProjectName] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('uz');
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   if (!isOpen) return null;
-
-  const handleSelectPreset = (preset: Project) => {
-    setSelectedPresetId(preset.id);
-    setProjectName(`${preset.title} (Dubbed)`);
-    setTargetLanguage(preset.targetLanguage || 'uz');
-  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -49,52 +42,20 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    let newProj: Project;
-
-    if (selectedPresetId) {
-      const found = INITIAL_PROJECTS.find(p => p.id === selectedPresetId);
-      if (found) {
-        newProj = {
-          ...found,
-          id: `proj-${Date.now()}`,
-          title: projectName || found.title,
-          targetLanguage,
-          status: 'draft',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-      } else {
-        newProj = {
-          id: `proj-${Date.now()}`,
-          title: projectName || 'Untitled Video Dub',
-          originalLanguage: 'en',
-          targetLanguage,
-          status: 'draft',
-          duration: 20.0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          videoUrl: videoUrl,
-          thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
-          voiceId: 'voice-farrux',
-          transcript: INITIAL_PROJECTS[0].transcript,
-        };
-      }
-    } else {
-      newProj = {
-        id: `proj-${Date.now()}`,
-        title: projectName || 'New Project Dub',
-        originalLanguage: 'en',
-        targetLanguage,
-        status: 'draft',
-        duration: 24.5,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        videoUrl: videoUrl,
-        thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
-        voiceId: targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena',
-        transcript: INITIAL_PROJECTS[0].transcript,
-      };
-    }
+    const newProj: Project = {
+      id: `proj-${Date.now()}`,
+      title: projectName || 'New Project Dub',
+      originalLanguage: 'en',
+      targetLanguage,
+      status: 'draft',
+      duration: 24.5,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      videoUrl: videoUrl,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
+      voiceId: targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena',
+      transcript: INITIAL_PROJECTS[0].transcript,
+    };
 
     onCreateProject(newProj);
     onClose();
@@ -111,7 +72,7 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
           <div>
             <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Create a new dub</h3>
             <p style={{ fontSize: '13px', color: 'var(--black-60)', marginTop: '2px' }}>
-              Upload your video or select a studio preset to start dubbing
+              Upload your video to start dubbing in 30+ languages
             </p>
           </div>
           <button 
@@ -125,38 +86,6 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
-            {/* Quick Demo Presets */}
-            <div style={{ marginBottom: '20px' }}>
-              <label className="label">1-Click Demo Presets</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                {INITIAL_PROJECTS.slice(0, 3).map(p => {
-                  const isSelected = selectedPresetId === p.id;
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => handleSelectPreset(p)}
-                      style={{
-                        border: isSelected ? '2px solid var(--black-100)' : 'var(--border-light)',
-                        backgroundColor: isSelected ? 'var(--black-05)' : 'var(--c-white)',
-                        borderRadius: 'var(--radius-sm)',
-                        padding: '10px',
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        transition: 'border-color var(--transition-fast)',
-                      }}
-                    >
-                      <Film size={18} style={{ margin: '0 auto 6px', display: 'block', color: isSelected ? 'var(--black-100)' : 'var(--black-60)' }} />
-                      <div style={{ fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {p.title.split(' ')[0]} {p.title.split(' ')[1]}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--black-40)', marginTop: '2px' }}>
-                        {p.duration}s • {p.originalLanguage.toUpperCase()} → {p.targetLanguage.toUpperCase()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
 
             {/* Drag and Drop Zone */}
             <div
@@ -274,7 +203,7 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!projectName && !selectedPresetId}
+              disabled={!projectName && !videoUrl}
             >
               Enter Studio →
             </button>

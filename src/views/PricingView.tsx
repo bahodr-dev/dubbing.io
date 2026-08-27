@@ -29,15 +29,15 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             alignItems: 'center',
             backgroundColor: 'var(--black-05)',
             border: 'var(--border-light)',
-            padding: '3px',
-            borderRadius: 'var(--radius-xs)',
+            padding: '4px',
+            borderRadius: 'var(--radius-pill)',
           }}>
             <button
               onClick={() => setBillingCycle('monthly')}
               style={{
-                padding: '6px 16px',
+                padding: '6px 18px',
                 border: 'none',
-                borderRadius: 'var(--radius-xs)',
+                borderRadius: 'var(--radius-pill)',
                 fontSize: '13px',
                 fontWeight: 600,
                 background: billingCycle === 'monthly' ? 'var(--black-100)' : 'transparent',
@@ -51,9 +51,9 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             <button
               onClick={() => setBillingCycle('yearly')}
               style={{
-                padding: '6px 16px',
+                padding: '6px 18px',
                 border: 'none',
-                borderRadius: 'var(--radius-xs)',
+                borderRadius: 'var(--radius-pill)',
                 fontSize: '13px',
                 fontWeight: 600,
                 background: billingCycle === 'yearly' ? 'var(--black-100)' : 'transparent',

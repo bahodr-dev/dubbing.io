@@ -61,6 +61,10 @@ export function App() {
     setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
   };
 
+  const handleRenameProject = (projectId: string, newTitle: string) => {
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, title: newTitle, updatedAt: new Date().toISOString() } : p));
+  };
+
   const handleDeleteProject = (projId: string) => {
     setProjects(prev => prev.filter(p => p.id !== projId));
     if (activeProjectId === projId) {
@@ -137,8 +141,10 @@ export function App() {
           <DashboardView
             projects={projects}
             onOpenProject={handleOpenProject}
+            onCreateProject={handleCreateProject}
             onOpenNewDub={() => setIsNewDubOpen(true)}
             onDeleteProject={handleDeleteProject}
+            onRenameProject={handleRenameProject}
           />
         )}
 

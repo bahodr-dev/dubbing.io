@@ -84,7 +84,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
         <div style={{
           display: 'flex',
           border: 'var(--border-light)',
-          borderRadius: 'var(--radius-xs)',
+          borderRadius: 'var(--radius-sm)',
           overflow: 'hidden',
           backgroundColor: 'var(--c-white)',
         }}>
@@ -169,8 +169,8 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                       fontWeight: 600,
                       backgroundColor: 'var(--black-05)',
                       border: 'var(--border-light)',
-                      padding: '3px 8px',
-                      borderRadius: 'var(--radius-xs)',
+                      padding: '3px 10px',
+                      borderRadius: 'var(--radius-pill)',
                       cursor: 'pointer',
                       color: 'var(--black-100)',
                     }}

@@ -164,7 +164,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       // Speaker icon / initials
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 22px Inter, sans-serif';
+      ctx.font = 'bold 22px Figtree, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(activeTrack === 'dubbed' ? 'AI VO' : 'ORIG', centerX, centerY);
@@ -283,9 +283,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             display: 'flex',
             backgroundColor: 'rgba(0, 0, 0, 0.75)',
             border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: 'var(--radius-xs)',
+            borderRadius: 'var(--radius-pill)',
             overflow: 'hidden',
-            padding: '2px',
+            padding: '3px',
             zIndex: 10,
           }}>
             <button
@@ -295,11 +295,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 background: activeTrack === 'original' ? 'var(--white-100)' : 'transparent',
                 color: activeTrack === 'original' ? 'var(--black-100)' : 'var(--white-70)',
                 border: 'none',
-                padding: '4px 10px',
+                padding: '5px 12px',
                 fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                borderRadius: '2px',
+                borderRadius: 'var(--radius-pill)',
                 transition: 'all 120ms ease',
               }}
             >
@@ -312,11 +312,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 background: activeTrack === 'dubbed' ? 'var(--white-100)' : 'transparent',
                 color: activeTrack === 'dubbed' ? 'var(--black-100)' : 'var(--white-70)',
                 border: 'none',
-                padding: '4px 10px',
+                padding: '5px 12px',
                 fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                borderRadius: '2px',
+                borderRadius: 'var(--radius-pill)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
@@ -338,7 +338,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }}>
         <Waveform
           isPlaying={isPlaying}
-          progress={currentTime / duration}
+          progress={currentTime / (duration || 1)}
           barsCount={72}
           height={28}
           color="white"
@@ -348,36 +348,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         />
       </div>
 
-      {/* Control Bar */}
-      <div style={{
-        backgroundColor: 'var(--black-100)',
-        padding: '12px 18px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-      }}>
-        {/* Timeline Slider */}
-        <input
-          type="range"
-          min={0}
-          max={duration}
-          step={0.05}
-          value={currentTime}
-          onChange={handleSeek}
-          className="timeline-slider"
-          style={{
-            background: `linear-gradient(to right, #ffffff ${(currentTime / duration) * 100}%, rgba(255, 255, 255, 0.2) ${(currentTime / duration) * 100}%)`,
-          }}
-        />
+      {/* Playback Controls & Scrubber */}
+      <div style={{ padding: '16px 20px', backgroundColor: 'var(--black-100)', color: 'var(--white-100)' }}>
+        {/* Progress Scrubber */}
+        <div style={{ marginBottom: '14px', position: 'relative' }}>
+          <input
+            type="range"
+            min={0}
+            max={duration || 100}
+            step={0.05}
+            value={currentTime}
+            onChange={handleSeek}
+            className="timeline-slider"
+          />
+        </div>
 
-        {/* Buttons and Time */}
+        {/* Action Controls Bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button
               onClick={togglePlay}
               className="btn btn-white btn-sm"
-              style={{ padding: '6px 12px', fontWeight: 600 }}
+              style={{ padding: '6px 14px', fontWeight: 600 }}
             >
               {isPlaying ? <Pause size={14} /> : <Play size={14} />}
               {isPlaying ? 'Pause' : 'Play'}
@@ -399,9 +391,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     background: playbackSpeed === spd ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
                     color: playbackSpeed === spd ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
-                    padding: '2px 6px',
+                    padding: '2px 8px',
                     fontSize: '11px',
-                    borderRadius: '2px',
+                    borderRadius: 'var(--radius-xs)',
                     cursor: 'pointer',
                   }}
                 >

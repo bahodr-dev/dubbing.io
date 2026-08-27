@@ -156,85 +156,85 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
                         <span style={{ fontSize: '16px', fontWeight: 700 }}>{voice.name}</span>
                         {voice.recommended && (
                           <span style={{
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            letterSpacing: '0.04em',
-                            textTransform: 'uppercase',
-                            padding: '1px 6px',
-                            backgroundColor: 'var(--black-100)',
-                            color: 'var(--white-100)',
-                            borderRadius: '2px',
-                          }}>
-                            HQ
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px' }}>
-                        {voice.language} • {voice.style}
-                      </div>
-                    </div>
-
-                    {isSelected && (
-                      <span style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        color: 'var(--black-100)',
-                      }}>
-                        Selected ✓
-                      </span>
-                    )}
-                  </div>
-
-                  <p style={{ fontSize: '12px', color: 'var(--black-70)', marginBottom: '12px', lineHeight: 1.4 }}>
-                    {voice.tone}
-                  </p>
-
-                  {/* Waveform graphic */}
-                  <div style={{
-                    backgroundColor: 'var(--black-05)',
-                    padding: '6px 10px',
-                    borderRadius: 'var(--radius-xs)',
-                    marginBottom: '12px',
-                  }}>
-                    <Waveform
-                      isPlaying={isPlaying}
-                      barsCount={28}
-                      height={24}
-                      color="black"
-                      seed={voice.name.charCodeAt(0) * 10}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => handleTogglePlay(voice, e)}
-                      className="btn btn-secondary btn-sm"
-                      style={{
-                        padding: '4px 10px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {isPlaying ? '■ Stop preview' : '▶ Play preview'}
-                    </button>
-
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {voice.tags.slice(0, 2).map((tag, idx) => (
-                        <span
-                          key={idx}
-                          style={{
-                            fontSize: '10px',
-                            color: 'var(--black-60)',
-                            border: '1px solid var(--black-12)',
-                            padding: '2px 5px',
-                            borderRadius: '2px',
-                          }}
-                        >
-                          {tag}
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          padding: '2px 8px',
+                          backgroundColor: 'var(--black-100)',
+                          color: 'var(--white-100)',
+                          borderRadius: 'var(--radius-pill)',
+                        }}>
+                          HQ
                         </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px' }}>
+                      {voice.language} • {voice.style}
+                    </div>
+                  </div>
+
+                  {isSelected && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: 'var(--black-100)',
+                    }}>
+                      Selected ✓
+                    </span>
+                  )}
+                </div>
+
+                <p style={{ fontSize: '12px', color: 'var(--black-70)', marginBottom: '12px', lineHeight: 1.4 }}>
+                  {voice.tone}
+                </p>
+
+                {/* Waveform graphic */}
+                <div style={{
+                  backgroundColor: 'var(--black-05)',
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: '12px',
+                }}>
+                  <Waveform
+                    isPlaying={isPlaying}
+                    barsCount={28}
+                    height={24}
+                    color="black"
+                    seed={voice.name.charCodeAt(0) * 10}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <button
+                    type="button"
+                    onClick={(e) => handleTogglePlay(voice, e)}
+                    className="btn btn-secondary btn-sm"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {isPlaying ? '■ Stop preview' : '▶ Play preview'}
+                  </button>
+
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {voice.tags.slice(0, 2).map((tag, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          fontSize: '10px',
+                          color: 'var(--black-60)',
+                          border: '1px solid var(--black-12)',
+                          padding: '2px 8px',
+                          borderRadius: 'var(--radius-pill)',
+                        }}
+                      >
+                        {tag}
+                      </span>
                       ))}
                     </div>
                   </div>
