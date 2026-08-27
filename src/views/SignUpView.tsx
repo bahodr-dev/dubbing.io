@@ -248,19 +248,19 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 alignItems: 'flex-start',
                 gap: '10px',
                 padding: '11px 14px',
-                backgroundColor: '#FEF2F2',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
+                backgroundColor: '#111827',
+                border: '1px solid rgba(255, 255, 255, 0.14)',
                 borderRadius: '10px',
                 fontSize: '13px',
                 lineHeight: 1.45,
-                color: '#991B1B',
+                color: '#ffffff',
                 marginBottom: '16px',
                 animation: 'fadeIn 160ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(239, 68, 68, 0.05)',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)',
               }}>
-                <AlertCircle size={16} color="#DC2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <AlertCircle size={16} color="#ffffff" style={{ flexShrink: 0, marginTop: '2px' }} />
                 <div style={{ flex: 1 }}>
-                  <span>{error}</span>
+                  <span style={{ color: 'rgba(255, 255, 255, 0.95)' }}>{error}</span>
                   {error.toLowerCase().includes('sign up') && authMode === 'signin' && (
                     <span 
                       onClick={() => {
@@ -271,7 +271,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                         display: 'block',
                         marginTop: '4px',
                         fontWeight: 600,
-                        color: '#B91C1C',
+                        color: '#ffffff',
                         textDecoration: 'underline',
                         cursor: 'pointer',
                       }}
@@ -287,13 +287,16 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                     background: 'none',
                     border: 'none',
                     padding: 0,
-                    color: 'rgba(153, 27, 27, 0.6)',
+                    color: 'rgba(255, 255, 255, 0.6)',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     marginTop: '2px',
+                    transition: 'color 120ms ease',
                   }}
+                  onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'}
                   title="Dismiss"
                 >
                   <X size={14} />
@@ -307,16 +310,16 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 alignItems: 'center',
                 gap: '10px',
                 padding: '11px 14px',
-                backgroundColor: '#F0FDF4',
-                border: '1px solid rgba(34, 197, 94, 0.25)',
+                backgroundColor: '#111827',
+                border: '1px solid rgba(255, 255, 255, 0.14)',
                 borderRadius: '10px',
                 fontSize: '13px',
-                color: '#166534',
+                color: '#ffffff',
                 marginBottom: '16px',
                 fontWeight: 500,
-                boxShadow: '0 1px 3px rgba(34, 197, 94, 0.06)',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)',
               }}>
-                <Check size={16} color="#16A34A" style={{ flexShrink: 0 }} />
+                <Check size={16} color="#ffffff" style={{ flexShrink: 0 }} />
                 <span style={{ flex: 1 }}>Password reset link has been sent to your email!</span>
               </div>
             )}
