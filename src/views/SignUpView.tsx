@@ -120,14 +120,14 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
           {/* Form Header */}
           <div style={{ marginBottom: '32px' }}>
             <h2 style={{
-              fontSize: 'clamp(32px, 3.5vw, 40px)',
+              fontSize: 'clamp(30px, 3.2vw, 38px)',
               fontWeight: 700,
               letterSpacing: '-0.03em',
-              lineHeight: 1.1,
+              lineHeight: 1.15,
               color: 'var(--black-100)',
               marginBottom: '10px',
             }}>
-              Create your account
+              Welcome back to your studio
             </h2>
             <p style={{
               fontSize: '15px',
@@ -266,7 +266,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               </div>
             </div>
 
-            {/* Submit Button (without arrow) */}
+            {/* Submit Button */}
             <button
               type="submit"
               className="btn btn-primary"
@@ -278,7 +278,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 borderRadius: 'var(--radius-pill)',
               }}
             >
-              Create account
+              Welcome back to your studio
             </button>
           </form>
 
