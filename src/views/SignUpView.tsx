@@ -22,6 +22,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   const [ssoDomain, setSsoDomain] = useState('');
   const [ssoTab, setSsoTab] = useState<'saml' | 'passkey'>('saml');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isCustomGithub, setIsCustomGithub] = useState(false);
+  const [customGithubUser, setCustomGithubUser] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,12 +59,13 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     }, 400);
   };
 
-  const handleAuthorizeGitHub = () => {
+  const handleAuthorizeGitHub = (customUser?: string) => {
     setIsAuthenticating(true);
     setTimeout(() => {
       setIsAuthenticating(false);
       setActiveSocialModal(null);
-      onSuccess('bahodr-dev@github.com');
+      const finalUser = customUser || (customGithubUser ? `${customGithubUser}@github.com` : 'bahodr-dev@github.com');
+      onSuccess(finalUser);
     }, 400);
   };
 
@@ -652,51 +655,129 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               </button>
             </div>
 
-            <div style={{ backgroundColor: '#F8FAFC', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '12px', padding: '16px', marginBottom: '20px', textAlign: 'center' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: '18px', fontWeight: 700 }}>
-                B
+            {!isCustomGithub ? (
+              <>
+                <div style={{ backgroundColor: '#F8FAFC', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '12px', padding: '16px', marginBottom: '16px', textAlign: 'center' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: '18px', fontWeight: 700 }}>
+                    B
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#111827' }}>bahodr-dev</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(0,0,0,0.5)', marginTop: '2px' }}>bahodrbro@gmail.com</div>
+                </div>
+
+                <p style={{ fontSize: '12.5px', color: 'rgba(0,0,0,0.6)', lineHeight: 1.5, marginBottom: '16px' }}>
+                  <strong>Dubbing.io</strong> will receive access to your public profile and workspace synchronization.
+                </p>
+
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSocialModal(null)}
+                    className="btn btn-secondary"
+                    style={{ flex: 1, height: '42px', fontSize: '13px' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAuthorizeGitHub('bahodr-dev@github.com')}
+                    disabled={isAuthenticating}
+                    style={{
+                      flex: 1.5,
+                      height: '42px',
+                      backgroundColor: '#2da44e',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Check size={16} />
+                    <span>{isAuthenticating ? 'Authorizing...' : 'Authorize bahodr-dev'}</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsCustomGithub(true)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(0,0,0,0.6)',
+                    fontSize: '12px',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'center',
+                    padding: '4px',
+                  }}
+                >
+                  Use another GitHub account / Enter username
+                </button>
+              </>
+            ) : (
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 600, color: '#111827', display: 'block', marginBottom: '6px' }}>
+                  GitHub Username or Email
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. your-github-handle"
+                  value={customGithubUser}
+                  onChange={e => setCustomGithubUser(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '44px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(0,0,0,0.16)',
+                    padding: '0 14px',
+                    fontSize: '13.5px',
+                    marginBottom: '14px',
+                    outline: 'none',
+                  }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomGithub(false)}
+                    className="btn btn-secondary"
+                    style={{ flex: 1, height: '42px', fontSize: '13px' }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAuthorizeGitHub(customGithubUser ? `${customGithubUser}@github.com` : undefined)}
+                    disabled={isAuthenticating}
+                    style={{
+                      flex: 1.5,
+                      height: '42px',
+                      backgroundColor: '#2da44e',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Check size={16} />
+                    <span>{isAuthenticating ? 'Authorizing...' : 'Connect & Authorize'}</span>
+                  </button>
+                </div>
               </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#111827' }}>bahodr-dev</div>
-              <div style={{ fontSize: '12px', color: 'rgba(0,0,0,0.5)', marginTop: '2px' }}>bahodrbro@gmail.com</div>
-            </div>
-
-            <p style={{ fontSize: '12.5px', color: 'rgba(0,0,0,0.6)', lineHeight: 1.5, marginBottom: '20px' }}>
-              <strong>Dubbing.io</strong> will receive access to your public profile and workspace synchronization.
-            </p>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setActiveSocialModal(null)}
-                className="btn btn-secondary"
-                style={{ flex: 1, height: '42px', fontSize: '13px' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleAuthorizeGitHub}
-                disabled={isAuthenticating}
-                style={{
-                  flex: 1.5,
-                  height: '42px',
-                  backgroundColor: '#2da44e',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                <Check size={16} />
-                <span>{isAuthenticating ? 'Authorizing...' : 'Authorize bahodr-dev'}</span>
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}
