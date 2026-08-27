@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { ActiveTab } from '../types';
 import { Check, X, Shield, KeyRound, Fingerprint } from 'lucide-react';
+import { api } from '../services/api';
 
 interface SignUpViewProps {
   onNavigate?: (tab: ActiveTab) => void;
@@ -16,6 +17,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [resetSent, setResetSent] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Social Auth Modals & States
   const [activeSocialModal, setActiveSocialModal] = useState<'google' | 'github' | 'sso' | null>(null);
@@ -25,7 +27,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   const [isCustomGithub, setIsCustomGithub] = useState(false);
   const [customGithubUser, setCustomGithubUser] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
       setError('Please enter your email address.');
@@ -47,35 +49,81 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     }
 
     setError('');
-    onSuccess(email);
+    setIsSubmitting(true);
+
+    try {
+      if (authMode === 'signup') {
+        const res = await api.auth.signup(email, password);
+        onSuccess(res.user.email);
+      } else {
+        const res = await api.auth.signin(email, password);
+        onSuccess(res.user.email);
+      }
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      setError(errorObj.message || 'Authentication failed. Please check your credentials.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSelectGoogleAccount = (selectedEmail: string) => {
+  const handleSelectGoogleAccount = async (selectedEmail: string) => {
     setIsAuthenticating(true);
-    setTimeout(() => {
-      setIsAuthenticating(false);
+    setError('');
+    try {
+      const res = await api.auth.oauth({
+        email: selectedEmail,
+        name: selectedEmail.includes('dubbing') ? 'Dubbing.io Studio' : 'Bahodir (Creator)',
+        provider: 'google',
+      });
       setActiveSocialModal(null);
-      onSuccess(selectedEmail);
-    }, 400);
+      onSuccess(res.user.email);
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      setError(errorObj.message || 'Google authentication failed.');
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
-  const handleAuthorizeGitHub = (customUser?: string) => {
+  const handleAuthorizeGitHub = async (customUser?: string) => {
     setIsAuthenticating(true);
-    setTimeout(() => {
-      setIsAuthenticating(false);
+    setError('');
+    try {
+      const targetUser = customUser || (customGithubUser ? `${customGithubUser}@github.com` : 'bahodr-dev@github.com');
+      const res = await api.auth.oauth({
+        email: targetUser,
+        name: targetUser.split('@')[0],
+        provider: 'github',
+      });
       setActiveSocialModal(null);
-      const finalUser = customUser || (customGithubUser ? `${customGithubUser}@github.com` : 'bahodr-dev@github.com');
-      onSuccess(finalUser);
-    }, 400);
+      onSuccess(res.user.email);
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      setError(errorObj.message || 'GitHub authentication failed.');
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
-  const handleAuthorizeSSO = () => {
+  const handleAuthorizeSSO = async () => {
     setIsAuthenticating(true);
-    setTimeout(() => {
-      setIsAuthenticating(false);
+    setError('');
+    try {
+      const targetDomain = ssoDomain ? `workspace@${ssoDomain}` : 'enterprise@dubbing.io';
+      const res = await api.auth.oauth({
+        email: targetDomain,
+        name: ssoDomain ? `${ssoDomain} Workspace` : 'Enterprise Workspace',
+        provider: 'sso',
+      });
       setActiveSocialModal(null);
-      onSuccess(ssoDomain ? `workspace@${ssoDomain}` : 'enterprise@dubbing.io');
-    }, 400);
+      onSuccess(res.user.email);
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      setError(errorObj.message || 'Enterprise SSO authentication failed.');
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
   return (
@@ -375,25 +423,34 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             {/* Main Submit Button (Pill shape) */}
             <button
               type="submit"
+              disabled={isSubmitting}
               style={{
                 width: '100%',
                 height: '48px',
                 borderRadius: '9999px',
-                backgroundColor: '#111827',
+                backgroundColor: isSubmitting ? '#374151' : '#111827',
                 color: '#ffffff',
                 border: 'none',
                 fontSize: '14px',
                 fontWeight: 600,
-                cursor: 'pointer',
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
                 transition: 'background-color 140ms ease',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
               }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#000000'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#111827'}
+              onMouseEnter={e => !isSubmitting && (e.currentTarget.style.backgroundColor = '#000000')}
+              onMouseLeave={e => !isSubmitting && (e.currentTarget.style.backgroundColor = '#111827')}
             >
-              {authMode === 'signin' && 'Sign in'}
-              {authMode === 'signup' && 'Create account'}
-              {authMode === 'forgot' && 'Send reset link'}
+              {isSubmitting ? 'Connecting...' : (
+                <>
+                  {authMode === 'signin' && 'Sign in'}
+                  {authMode === 'signup' && 'Create account'}
+                  {authMode === 'forgot' && 'Send reset link'}
+                </>
+              )}
             </button>
           </form>
 
