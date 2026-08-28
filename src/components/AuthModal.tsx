@@ -20,6 +20,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (event.data && typeof event.data === 'object') {
+        if (event.data.type === 'DUBBING_AUTH_SUCCESS') {
+          if (event.data.token) {
+            api.setToken(event.data.token);
+          }
+          if (event.data.user?.email) {
+            onSuccess(event.data.user.email);
+            onClose();
+          }
+        } else if (event.data.type === 'DUBBING_AUTH_ERROR') {
+          setError(event.data.error || 'Authentication failed.');
+        }
+      }
+    };
+
+    window.addEventListener('message', handleAuthMessage);
+    return () => window.removeEventListener('message', handleAuthMessage);
+  }, [isOpen, onSuccess, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,7 +77,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleGoogleAuth = () => {
-    window.location.assign('/api/auth/google');
+    setError('');
+    const width = 540;
+    const height = 650;
+    const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
+    const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
+
+    const popup = window.open(
+      '/api/auth/google',
+      'dubbing_oauth_google',
+      `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      window.location.assign('/api/auth/google');
+    }
   };
 
   return (

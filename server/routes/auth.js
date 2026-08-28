@@ -157,9 +157,31 @@ const handleOAuthCallbackRoute = async (req, res) => {
   const { provider } = req.params;
   const { code, state, error, error_description } = req.query;
 
+  const renderError = (errorMessage) => {
+    return res.send(`<!DOCTYPE html>
+<html>
+<head><title>Authentication Error</title></head>
+<body style="background:#000;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+  <p style="color:#ef4444;font-size:14px;">${errorMessage}</p>
+  <script>
+    try {
+      if (window.opener) {
+        window.opener.postMessage({ type: 'DUBBING_AUTH_ERROR', error: ${JSON.stringify(errorMessage)} }, '*');
+        setTimeout(() => window.close(), 600);
+      } else {
+        window.location.replace("${appUrl}/signup?error=${encodeURIComponent(errorMessage)}");
+      }
+    } catch(e) {
+      window.location.replace("${appUrl}/signup?error=${encodeURIComponent(errorMessage)}");
+    }
+  </script>
+</body>
+</html>`);
+  };
+
   if (error) {
     console.warn(`OAuth error from ${provider}:`, error, error_description);
-    return res.redirect(`${appUrl}/signup?error=${encodeURIComponent(error_description || error || 'OAuth authorization failed.')}`);
+    return renderError(error_description || error || 'OAuth authorization failed.');
   }
 
   try {
@@ -168,12 +190,64 @@ const handleOAuthCallbackRoute = async (req, res) => {
     // Set secure HTTP-only session cookie
     setAuthCookie(res, result.token);
 
-    // Redirect to frontend dashboard with token parameter for fallback sync
     const destination = result.redirectUrl && result.redirectUrl.startsWith('/') ? result.redirectUrl : '/dashboard';
-    return res.redirect(`${appUrl}${destination}?token=${encodeURIComponent(result.token)}`);
+
+    // Return HTML with postMessage for popup windows and fallback redirect
+    return res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Authenticating...</title>
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(255,255,255,0.15);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <p style="font-size: 14px; opacity: 0.85; letter-spacing: -0.01em;">Completing authentication...</p>
+  <script>
+    const payload = {
+      type: 'DUBBING_AUTH_SUCCESS',
+      token: ${JSON.stringify(result.token)},
+      user: ${JSON.stringify(result.user)}
+    };
+
+    if (window.opener) {
+      try {
+        window.opener.postMessage(payload, '*');
+      } catch (err) {}
+      setTimeout(() => {
+        window.close();
+      }, 350);
+    } else {
+      window.location.replace("${appUrl}${destination}?token=${encodeURIComponent(result.token)}");
+    }
+  </script>
+</body>
+</html>`);
   } catch (err) {
     console.error(`OAuth callback error for ${provider}:`, err);
-    return res.redirect(`${appUrl}/signup?error=${encodeURIComponent(err.message || 'OAuth authentication failed.')}`);
+    return renderError(err.message || 'OAuth authentication failed.');
   }
 };
 

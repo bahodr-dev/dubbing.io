@@ -18,18 +18,16 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     const res = await request(app)
       .get('/api/auth/google/callback?code=fake_code_123&state=tampered_invalid_state');
 
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toContain('error=');
-    expect(res.headers.location).toMatch(/invalid/i);
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/invalid|consumed/i);
   });
 
   it('12. Rejects missing OAuth state on callback', async () => {
     const res = await request(app)
       .get('/api/auth/github/callback?code=fake_code_123');
 
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toContain('error=');
-    expect(res.headers.location).toMatch(/missing/i);
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/missing/i);
   });
 
   it('13. Rejects expired OAuth state', async () => {
@@ -43,9 +41,8 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     const res = await request(app)
       .get(`/api/auth/microsoft/callback?code=fake_code_123&state=${expiredState}`);
 
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toContain('error=');
-    expect(res.headers.location).toMatch(/expired/i);
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/expired/i);
   });
 
   it('14. Existing OAuth account logs into the correct existing user', async () => {
@@ -79,8 +76,9 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     const res = await request(app)
       .get(`/api/auth/google/callback?code=mock_google_auth_code&state=${state}`);
 
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toContain('/dashboard');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
+    
     // Session cookie is set
     const cookies = res.headers['set-cookie'] || [];
     const hasSessionCookie = cookies.some((c) => c.includes('dubbing_session='));
@@ -105,8 +103,8 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     const res = await request(app)
       .get(`/api/auth/google/callback?code=mock_code&state=${state}`);
 
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toContain('/dashboard');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
 
     // Verify user was created in database
     const createdUser = userRepository.findByEmail(newGoogleEmail);
@@ -145,8 +143,8 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     const res = await request(app)
       .get(`/api/auth/github/callback?code=mock_github_code&state=${state}`);
 
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toContain('/dashboard');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
 
     // Verify GitHub account was linked to existing user ID
     const linkedAccount = oauthAccountRepository.findByProviderAccount('github', githubId);
@@ -180,7 +178,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     const res = await request(app)
       .get(`/api/auth/microsoft/callback?code=mock_ms_code&state=${state}`);
 
-    expect(res.status).toBe(302);
+    expect(res.status).toBe(200);
 
     // Verify attacker was NOT linked to victim user ID!
     const linkedAccount = oauthAccountRepository.findByProviderAccount('microsoft', attackerMicrosoftId);

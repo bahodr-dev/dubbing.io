@@ -20,14 +20,32 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   const [resetSent, setResetSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Check for error parameter from OAuth callbacks
+  // Check for error parameter from OAuth callbacks and listen for popup messages
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const err = params.get('error');
     if (err) {
       setError(decodeURIComponent(err));
     }
-  }, []);
+
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (event.data && typeof event.data === 'object') {
+        if (event.data.type === 'DUBBING_AUTH_SUCCESS') {
+          if (event.data.token) {
+            api.setToken(event.data.token);
+          }
+          if (event.data.user?.email) {
+            onSuccess(event.data.user.email);
+          }
+        } else if (event.data.type === 'DUBBING_AUTH_ERROR') {
+          setError(event.data.error || 'Authentication failed.');
+        }
+      }
+    };
+
+    window.addEventListener('message', handleAuthMessage);
+    return () => window.removeEventListener('message', handleAuthMessage);
+  }, [onSuccess]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +92,22 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   };
 
   const handleOAuthStart = (provider: 'google' | 'github') => {
-    window.location.assign(`/api/auth/${provider}`);
+    setError('');
+    const width = 540;
+    const height = 650;
+    const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
+    const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
+    
+    const popup = window.open(
+      `/api/auth/${provider}`,
+      `dubbing_oauth_${provider}`,
+      `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      // Fallback if popup is blocked by browser
+      window.location.assign(`/api/auth/${provider}`);
+    }
   };
 
   return (
