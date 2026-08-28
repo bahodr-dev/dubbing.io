@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { TranscriptSegment } from '../types';
-import { Check, Edit3, Volume2 } from 'lucide-react';
+import { Check, Edit3, Volume2, X } from 'lucide-react';
 import { playVoiceSample, stopVoiceSample } from '../audio/audioSynth';
 
 interface TranscriptEditorProps {
@@ -9,6 +9,7 @@ interface TranscriptEditorProps {
   onSeekToTime?: (time: number) => void;
   targetLanguage: string;
   originalLanguage: string;
+  currentPlayTime?: number;
 }
 
 export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
@@ -17,6 +18,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   onSeekToTime,
   targetLanguage,
   originalLanguage,
+  currentPlayTime,
 }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'translated' | 'original'>('both');
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
@@ -24,10 +26,22 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   const [tempTranslated, setTempTranslated] = useState('');
   const [playingSegmentId, setPlayingSegmentId] = useState<string | null>(null);
 
+  useEffect(() => {
+    return () => {
+      stopVoiceSample();
+    };
+  }, []);
+
   const handleStartEdit = (seg: TranscriptSegment) => {
     setEditingSegmentId(seg.id);
     setTempOriginal(seg.originalText);
     setTempTranslated(seg.translatedText);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingSegmentId(null);
+    setTempOriginal('');
+    setTempTranslated('');
   };
 
   const handleSaveEdit = (segId: string) => {
@@ -40,6 +54,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
       stopVoiceSample();
       setPlayingSegmentId(null);
     } else {
+      stopVoiceSample();
       setPlayingSegmentId(seg.id);
       if (onSeekToTime) onSeekToTime(seg.startTime);
       playVoiceSample(lang === 'uz' ? 'Farrux' : 'Sophia', {
@@ -63,6 +78,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
       border: 'var(--border-light)',
       borderRadius: 'var(--radius-md)',
       overflow: 'hidden',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
     }}>
       {/* Header Bar */}
       <div style={{
@@ -72,6 +88,8 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
         padding: '16px 20px',
         borderBottom: 'var(--border-light)',
         backgroundColor: 'var(--black-02)',
+        flexWrap: 'wrap',
+        gap: '12px',
       }}>
         <div>
           <h4 style={{ fontSize: '15px', fontWeight: 700 }}>Transcript & Dub Alignment</h4>
@@ -89,6 +107,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
           backgroundColor: 'var(--c-white)',
         }}>
           <button
+            type="button"
             onClick={() => setActiveTab('both')}
             style={{
               padding: '6px 12px',
@@ -103,6 +122,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
             Split View
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('translated')}
             style={{
               padding: '6px 12px',
@@ -118,6 +138,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
             Translated ({targetLanguage.toUpperCase()})
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('original')}
             style={{
               padding: '6px 12px',
@@ -140,6 +161,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
         {segments.map((seg, idx) => {
           const isEditing = editingSegmentId === seg.id;
           const isPlaying = playingSegmentId === seg.id;
+          const isCurrentActive = typeof currentPlayTime === 'number' && currentPlayTime >= seg.startTime && currentPlayTime <= seg.endTime;
 
           return (
             <div
@@ -147,8 +169,13 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
               style={{
                 padding: '16px 20px',
                 borderBottom: idx < segments.length - 1 ? 'var(--border-light)' : 'none',
-                backgroundColor: isEditing ? 'var(--black-02)' : 'var(--c-white)',
-                transition: 'background-color var(--transition-fast)',
+                borderLeft: isCurrentActive ? '3px solid var(--black-100)' : '3px solid transparent',
+                backgroundColor: isEditing 
+                  ? 'var(--black-02)' 
+                  : isCurrentActive 
+                  ? 'rgba(0, 0, 0, 0.03)' 
+                  : 'var(--c-white)',
+                transition: 'all var(--transition-fast)',
               }}
             >
               {/* Row Header: Timestamp & Quick Action */}
@@ -160,6 +187,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button
+                    type="button"
                     onClick={() => {
                       if (onSeekToTime) onSeekToTime(seg.startTime);
                     }}
@@ -167,12 +195,13 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                     style={{
                       fontSize: '12px',
                       fontWeight: 600,
-                      backgroundColor: 'var(--black-05)',
-                      border: 'var(--border-light)',
+                      backgroundColor: isCurrentActive ? 'var(--black-100)' : 'var(--black-05)',
+                      border: isCurrentActive ? '1px solid var(--black-100)' : 'var(--border-light)',
                       padding: '3px 10px',
                       borderRadius: 'var(--radius-pill)',
                       cursor: 'pointer',
-                      color: 'var(--black-100)',
+                      color: isCurrentActive ? 'var(--white-100)' : 'var(--black-100)',
+                      transition: 'all var(--transition-fast)',
                     }}
                     title="Seek video to this timestamp"
                   >
@@ -207,20 +236,31 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                       Edit
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSaveEdit(seg.id)}
-                      className="btn btn-primary btn-sm"
-                      style={{ padding: '4px 10px', fontSize: '11px' }}
-                    >
-                      <Check size={12} />
-                      Save
-                    </button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={handleCancelEdit}
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: '4px 8px', fontSize: '11px' }}
+                        title="Cancel"
+                      >
+                        <X size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(seg.id)}
+                        className="btn btn-primary btn-sm"
+                        style={{ padding: '4px 10px', fontSize: '11px' }}
+                      >
+                        <Check size={12} />
+                        Save
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Segment Content Content */}
+              {/* Segment Content */}
               {isEditing ? (
                 <div style={{ display: 'grid', gridTemplateColumns: activeTab === 'both' ? '1fr 1fr' : '1fr', gap: '12px' }}>
                   {(activeTab === 'both' || activeTab === 'original') && (
@@ -231,6 +271,13 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                         rows={2}
                         value={tempOriginal}
                         onChange={e => setTempOriginal(e.target.value)}
+                        onKeyDown={e => {
+                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                            handleSaveEdit(seg.id);
+                          } else if (e.key === 'Escape') {
+                            handleCancelEdit();
+                          }
+                        }}
                         style={{ fontSize: '13px', lineHeight: 1.4 }}
                       />
                     </div>
@@ -243,6 +290,13 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                         rows={2}
                         value={tempTranslated}
                         onChange={e => setTempTranslated(e.target.value)}
+                        onKeyDown={e => {
+                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                            handleSaveEdit(seg.id);
+                          } else if (e.key === 'Escape') {
+                            handleCancelEdit();
+                          }
+                        }}
                         style={{ fontSize: '13px', lineHeight: 1.4, fontWeight: 500 }}
                       />
                     </div>

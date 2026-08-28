@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Voice } from '../../types';
 import { api } from '../../services/api';
 import {
@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Globe,
   Link as LinkIcon,
+  X,
 } from 'lucide-react';
 
 interface WorkspaceCreatorProps {
@@ -33,6 +34,35 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const langDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(event.target as Node)) {
+        setIsLangDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLanguageSelect = (code: string) => {
+    setTargetLanguage(code);
+    setIsLangDropdownOpen(false);
+    // Find matching voice for this target language
+    const matchingVoice = voices.find((v) => v.languageCode === code);
+    if (matchingVoice) {
+      setSelectedVoiceId(matchingVoice.id);
+    }
+  };
+
+  const handleClearFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUploadedFile(null);
+    setUploadedFileName('');
+    setProjectName('');
+  };
 
   const LANGUAGES = [
     { code: 'uz', name: 'Uzbek (O\'zbek)' },
@@ -243,7 +273,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           />
 
           {uploadedFileName ? (
-            <div style={{ textAlign: 'center', pointerEvents: 'none' }}>
+            <div style={{ textAlign: 'center', position: 'relative', zIndex: 2 }}>
               <div
                 style={{
                   width: '40px',
@@ -262,6 +292,20 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               <p style={{ fontSize: '12px', color: 'rgba(0, 0, 0, 0.5)', marginTop: '2px' }}>
                 File ready for dubbing
               </p>
+              <button
+                type="button"
+                onClick={handleClearFile}
+                className="btn btn-ghost btn-sm"
+                style={{
+                  marginTop: '8px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  color: 'rgba(0, 0, 0, 0.6)',
+                }}
+              >
+                <X size={12} style={{ marginRight: '4px' }} />
+                Remove file
+              </button>
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', pointerEvents: 'none' }}>
@@ -339,6 +383,25 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                   outline: 'none',
                 }}
               />
+              {videoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setVideoUrl('')}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    border: 'none',
+                    background: 'none',
+                    cursor: 'pointer',
+                    color: 'rgba(0, 0, 0, 0.4)',
+                    padding: '4px',
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
             <p style={{ fontSize: '11.5px', color: 'rgba(0, 0, 0, 0.45)', marginTop: '6px' }}>
               Supports YouTube, Vimeo, TikTok, or direct .mp4/.mp3 links
@@ -358,7 +421,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Target Language Dropdown */}
-          <div style={{ position: 'relative' }}>
+          <div ref={langDropdownRef} style={{ position: 'relative' }}>
             <button
               type="button"
               onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
@@ -401,10 +464,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                   <button
                     key={l.code}
                     type="button"
-                    onClick={() => {
-                      setTargetLanguage(l.code);
-                      setIsLangDropdownOpen(false);
-                    }}
+                    onClick={() => handleLanguageSelect(l.code)}
                     style={{
                       width: '100%',
                       textAlign: 'left',

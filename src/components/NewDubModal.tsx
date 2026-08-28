@@ -123,6 +123,7 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
                 setIsDragging(false);
                 const file = e.dataTransfer.files?.[0];
                 if (file) {
+                  setSelectedFile(file);
                   setProjectName(file.name.replace(/\.[^/.]+$/, ''));
                   setUploadProgress(100);
                 }

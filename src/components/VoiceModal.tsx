@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Voice } from '../types';
 import { VOICES } from '../data/voices';
 import { Waveform } from './Waveform';
@@ -22,6 +22,22 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
   const [activeTab, setActiveTab] = useState<string>(filterLanguageCode || 'all');
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        stopVoiceSample();
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      stopVoiceSample();
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 

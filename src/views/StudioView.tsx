@@ -53,6 +53,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [activeAudioTrack, setActiveAudioTrack] = useState<'original' | 'dubbed'>(
     project?.status === 'completed' ? 'dubbed' : 'original'
   );
+  const [currentPlayTime, setCurrentPlayTime] = useState<number>(0);
+  const [seekTime, setSeekTime] = useState<number | null>(null);
 
   const handleBack = () => {
     if (onBackToDashboard) {
@@ -209,7 +211,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
         {/* Breadcrumb & Project Name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
-            onClick={onBackToDashboard}
+            onClick={handleBack}
             className="btn btn-ghost btn-sm"
             style={{ padding: '6px 8px', color: 'var(--black-60)' }}
             title="Back to Dashboard"
@@ -325,6 +327,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   project={project}
                   activeTrack={activeAudioTrack}
                   onChangeTrack={setActiveAudioTrack}
+                  onTimeUpdate={(time) => setCurrentPlayTime(time)}
+                  seekTime={seekTime}
                 />
               </div>
 
@@ -426,6 +430,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 onUpdateSegment={handleUpdateSegment}
                 targetLanguage={project.targetLanguage}
                 originalLanguage={project.originalLanguage}
+                currentPlayTime={currentPlayTime}
+                onSeekToTime={(time) => setSeekTime(time)}
               />
             </div>
           </div>

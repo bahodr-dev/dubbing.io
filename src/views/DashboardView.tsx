@@ -222,68 +222,83 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               ) : (
                 <div>
-                  {projects
-                    .filter(
-                      (p) =>
-                        p.title.toLowerCase().includes(recentSearch.toLowerCase()) ||
-                        p.targetLanguage.toLowerCase().includes(recentSearch.toLowerCase())
-                    )
-                    .slice(0, 4)
-                    .map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => onOpenProject(p)}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '2fr 1fr 1fr 1fr',
-                          padding: '12px',
-                          fontSize: '13px',
-                          fontWeight: 500,
-                          color: '#111827',
-                          borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
-                          alignItems: 'center',
-                          cursor: 'pointer',
-                          transition: 'background-color 120ms ease',
-                          borderRadius: '6px',
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.02)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                          <div
-                            style={{
-                              width: '28px',
-                              height: '20px',
-                              borderRadius: '4px',
-                              backgroundColor: 'rgba(0,0,0,0.08)',
-                              overflow: 'hidden',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <img src={p.thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          </div>
-                          <span
-                            style={{
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              fontWeight: 600,
-                            }}
-                          >
-                            {p.title}
-                          </span>
-                        </div>
-                        <div style={{ color: 'rgba(0, 0, 0, 0.65)' }}>
-                          {p.originalLanguage.toUpperCase()} → {p.targetLanguage === 'uz' ? 'Uzbek' : p.targetLanguage.toUpperCase()}
-                        </div>
-                        <div style={{ color: 'rgba(0, 0, 0, 0.65)', fontFamily: 'monospace' }}>
-                          {Math.floor(p.duration)}s
-                        </div>
-                        <div style={{ color: 'rgba(0, 0, 0, 0.65)' }}>
-                          MP4 / Video
-                        </div>
+                  {projects.filter(
+                    (p) =>
+                      p.title.toLowerCase().includes(recentSearch.toLowerCase()) ||
+                      p.targetLanguage.toLowerCase().includes(recentSearch.toLowerCase())
+                  ).length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 20px', color: 'rgba(0, 0, 0, 0.45)' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(0, 0, 0, 0.7)' }}>
+                        No matching dubs found
                       </div>
-                    ))}
+                      <div style={{ fontSize: '12px', color: 'rgba(0, 0, 0, 0.45)', marginTop: '2px' }}>
+                        Try a different search keyword.
+                      </div>
+                    </div>
+                  ) : (
+                    projects
+                      .filter(
+                        (p) =>
+                          p.title.toLowerCase().includes(recentSearch.toLowerCase()) ||
+                          p.targetLanguage.toLowerCase().includes(recentSearch.toLowerCase())
+                      )
+                      .slice(0, 4)
+                      .map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => onOpenProject(p)}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '2fr 1fr 1fr 1fr',
+                            padding: '12px',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            color: '#111827',
+                            borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
+                            alignItems: 'center',
+                            cursor: 'pointer',
+                            transition: 'background-color 120ms ease',
+                            borderRadius: '6px',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.02)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '20px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(0,0,0,0.08)',
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <img src={p.thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                            <span
+                              style={{
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {p.title}
+                            </span>
+                          </div>
+                          <div style={{ color: 'rgba(0, 0, 0, 0.65)' }}>
+                            {p.originalLanguage.toUpperCase()} → {p.targetLanguage === 'uz' ? 'Uzbek' : p.targetLanguage.toUpperCase()}
+                          </div>
+                          <div style={{ color: 'rgba(0, 0, 0, 0.65)', fontFamily: 'monospace' }}>
+                            {Math.floor(p.duration)}s
+                          </div>
+                          <div style={{ color: 'rgba(0, 0, 0, 0.65)' }}>
+                            MP4 / Video
+                          </div>
+                        </div>
+                      ))
+                  )}
                 </div>
               )}
             </div>

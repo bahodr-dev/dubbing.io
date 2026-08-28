@@ -10,6 +10,7 @@ interface VideoPlayerProps {
   activeTrack: 'original' | 'dubbed';
   onChangeTrack: (track: 'original' | 'dubbed') => void;
   onTimeUpdate?: (currentTime: number) => void;
+  seekTime?: number | null;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -17,6 +18,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   activeTrack,
   onChangeTrack,
   onTimeUpdate,
+  seekTime,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -41,7 +43,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setCurrentTime(0);
     setIsPlaying(false);
     stopVoiceSample();
+    return () => {
+      stopVoiceSample();
+    };
   }, [project.id]);
+
+  useEffect(() => {
+    if (typeof seekTime === 'number' && !isNaN(seekTime)) {
+      setCurrentTime(seekTime);
+      if (onTimeUpdate) onTimeUpdate(seekTime);
+    }
+  }, [seekTime]);
 
   // Handle Play / Pause with Audio Engine
   const togglePlay = () => {
