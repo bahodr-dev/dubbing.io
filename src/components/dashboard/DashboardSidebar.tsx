@@ -42,7 +42,6 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
         flexDirection: 'column',
         justifyContent: 'space-between',
         backgroundColor: '#FAFAFB',
-        overflow: isSidebarOpen ? 'hidden' : 'visible',
         position: 'relative',
         zIndex: 50,
         transition:
@@ -127,6 +126,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
             <button
               type="button"
               onClick={() => onTabChange('home')}
+              title={!isSidebarOpen ? 'Start new dubbing' : undefined}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -159,6 +159,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
             <button
               type="button"
               onClick={() => onTabChange('recent')}
+              title={!isSidebarOpen ? `Recent projects (${projects.length})` : undefined}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -204,6 +205,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
             <button
               type="button"
               onClick={() => onTabChange('completed')}
+              title={!isSidebarOpen ? `Completed dubs (${completedCount})` : undefined}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -249,6 +251,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
             <button
               type="button"
               onClick={() => onTabChange('draft')}
+              title={!isSidebarOpen ? `Drafts (${draftCount})` : undefined}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -321,6 +324,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
               <button
                 type="button"
                 onClick={() => onTabChange('voices')}
+                title={!isSidebarOpen ? 'Voices Studio' : undefined}
                 style={{
                   width: '100%',
                   display: 'flex',
