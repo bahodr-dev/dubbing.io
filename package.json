@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"node server/index.js\" \"vite\"",
+    "dev": "concurrently -k \"node --watch server/index.js\" \"vite\"",
     "dev:frontend": "vite",
-    "server": "node server/index.js",
+    "server": "node --watch server/index.js",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
