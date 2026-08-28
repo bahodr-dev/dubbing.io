@@ -180,13 +180,6 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             </h1>
           </div>
         </div>
-
-        {/* Subtle Bottom Ambient Anchor */}
-        <div style={{ zIndex: 2, opacity: 0.4 }}>
-          <span className="mono" style={{ fontSize: '11px', letterSpacing: '0.06em', color: 'rgba(255, 255, 255, 0.7)' }}>
-            STUDIO EDITION // v2.0
-          </span>
-        </div>
       </div>
 
       {/* RIGHT PANEL: Minimal Auth Form (50%) */}
