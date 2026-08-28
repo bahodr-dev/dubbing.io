@@ -4,20 +4,22 @@ import { Check, Loader2, Sparkles } from 'lucide-react';
 
 interface ProcessingViewProps {
   project: Project;
+  jobId?: string;
   onComplete: () => void;
 }
 
 const STAGES: ProcessingStep[] = [
   { id: 'upload', label: 'Video uploaded', detail: '1080p source stream validated', targetPercent: 15 },
   { id: 'extract', label: 'Audio extracted & normalized', detail: 'Acoustic waveform separated at 44.1 kHz', targetPercent: 32 },
-  { id: 'transcribe', label: 'Speech transcribed', detail: 'Automatic timestamp alignment generated', targetPercent: 52 },
-  { id: 'translate', label: 'Translation completed', detail: 'English (US) → Uzbek neural semantic mapping', targetPercent: 72 },
-  { id: 'voice', label: 'Generating neural voice', detail: 'Synthesizing voiceover with Farrux model', targetPercent: 88 },
+  { id: 'transcribe', label: 'Speech transcribed', detail: 'Automatic timestamp alignment generated with Whisper', targetPercent: 52 },
+  { id: 'translate', label: 'Translation completed', detail: 'Neural semantic mapping into target language', targetPercent: 72 },
+  { id: 'voice', label: 'Generating neural voice', detail: 'Synthesizing voiceover with studio voice profile', targetPercent: 88 },
   { id: 'render', label: 'Rendering video & muxing', detail: 'Synchronizing timeline audio and video tracks', targetPercent: 100 },
 ];
 
 export const ProcessingView: React.FC<ProcessingViewProps> = ({
   project,
+  jobId,
   onComplete,
 }) => {
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
@@ -29,25 +31,58 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
     "Assalomu", "alaykum", "barchaga,", "yangi", "avlod", "mahsulot", "taqdimotiga", "xush", "kelibsiz."
   ];
 
+  // If jobId is provided, poll status from backend job queue
   useEffect(() => {
-    const stepInterval = setInterval(() => {
-      setCurrentStepIdx(prev => {
-        if (prev < STAGES.length - 1) {
-          const next = prev + 1;
-          setProgressPercent(STAGES[next].targetPercent);
-          return next;
-        } else {
-          clearInterval(stepInterval);
-          setTimeout(() => {
-            onComplete();
-          }, 800);
-          return prev;
-        }
-      });
-    }, 1400);
+    if (!jobId) {
+      const stepInterval = setInterval(() => {
+        setCurrentStepIdx(prev => {
+          if (prev < STAGES.length - 1) {
+            const next = prev + 1;
+            setProgressPercent(STAGES[next].targetPercent);
+            return next;
+          } else {
+            clearInterval(stepInterval);
+            setTimeout(() => {
+              onComplete();
+            }, 800);
+            return prev;
+          }
+        });
+      }, 1400);
 
-    return () => clearInterval(stepInterval);
-  }, [onComplete]);
+      return () => clearInterval(stepInterval);
+    }
+
+    // Polling mode
+    let isCancelled = false;
+    const pollJob = async () => {
+      try {
+        const res = await (window as any).api?.dubbing?.getJob(jobId);
+        if (isCancelled || !res?.job) return;
+
+        const job = res.job;
+        if (job.progress) setProgressPercent(job.progress);
+
+        if (job.status === 'transcribing') setCurrentStepIdx(2);
+        else if (job.status === 'translating') setCurrentStepIdx(3);
+        else if (job.status === 'synthesizing') setCurrentStepIdx(4);
+        else if (job.status === 'completed') {
+          setCurrentStepIdx(5);
+          setProgressPercent(100);
+          setTimeout(() => onComplete(), 600);
+          return;
+        }
+      } catch (err) {
+        console.warn('Job polling error:', err);
+      }
+    };
+
+    const interval = setInterval(pollJob, 1200);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [jobId, onComplete]);
 
   // Token streamer animation for transcription realism
   useEffect(() => {

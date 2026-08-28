@@ -158,6 +158,45 @@ class ApiClient {
 
   // 3. AI DUBBING ENGINE & EXPORTS
   public dubbing = {
+    process: async (payload: {
+      projectId?: string;
+      mediaPath?: string;
+      originalLanguage?: string;
+      targetLanguage?: string;
+      voiceId?: string;
+      duration?: number;
+    }): Promise<{ jobId: string; status: string; message: string }> => {
+      return this.request<{ jobId: string; status: string; message: string }>('/dubbing/process', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    getJob: async (jobId: string): Promise<{ job: any }> => {
+      return this.request<{ job: any }>(`/dubbing/jobs/${jobId}`);
+    },
+
+    transcribe: async (payload: { mediaPath?: string; duration?: number; language?: string }): Promise<{ segments: TranscriptSegment[]; segmentCount: number }> => {
+      return this.request<{ segments: TranscriptSegment[]; segmentCount: number }>('/dubbing/transcribe', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    translate: async (payload: { text?: string; segments?: TranscriptSegment[]; sourceLanguage?: string; targetLanguage?: string }): Promise<any> => {
+      return this.request<any>('/dubbing/translate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    synthesize: async (payload: { text: string; voiceId?: string; speed?: number }): Promise<{ audioUrl: string; duration: number; provider: string }> => {
+      return this.request<{ audioUrl: string; duration: number; provider: string }>('/dubbing/synthesize', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
     generate: async (payload: {
       sourceUrl?: string;
       originalLanguage?: string;

@@ -1,83 +1,172 @@
 import { Router } from 'express';
-import { randomUUID } from 'crypto';
-import { db } from '../db.js';
+import path from 'path';
+import { db, uploadsDir } from '../db.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { transcribeAudio } from '../services/ai/transcription.js';
+import { translateSegments, translateText } from '../services/ai/translation.js';
+import { synthesizeSpeech } from '../services/ai/tts.js';
+import { JobManager } from '../services/jobQueue.js';
 
 export const dubbingRouter = Router();
 
-// Multi-language translation dictionaries
-const TRANSLATION_MAP = {
-  uz: [
-    { orig: "Welcome everyone to our next generation AI studio presentation.", trans: "Barchangizni yangi avlod sun'iy intellekt studiyamiz taqdimotiga xush kelibsiz." },
-    { orig: "Today we are showcasing automatic video dubbing and voice synchronization.", trans: "Bugun biz avtomatik video dublyaj va ovozni sinxronlashtirish tizimini namoyish etamiz." },
-    { orig: "Our neural voice cloning preserves the exact emotion and cadence of the original speaker.", trans: "Bizning neyron ovoz klonlash tizimimiz so'zlovchining his-tuyg'ulari va tempini to'liq saqlab qoladi." },
-    { orig: "You can seamlessly translate your video into over thirty global languages in minutes.", trans: "Videolaringizni bir necha daqiqada 30 dan ortiq dunyo tillariga osonlikcha tarjima qilishingiz mumkin." },
-    { orig: "Thank you for watching, and start creating your first multilingual dub today.", trans: "E'tiboringiz uchun rahmat, bugunoq o'z ko'p tilli birinchi dublyajingizni yarating." }
-  ],
-  es: [
-    { orig: "Welcome everyone to our next generation AI studio presentation.", trans: "Bienvenidos a todos a nuestra presentación del estudio de IA de próxima generación." },
-    { orig: "Today we are showcasing automatic video dubbing and voice synchronization.", trans: "Hoy estamos mostrando el doblaje automático de video y sincronización de voz." },
-    { orig: "Our neural voice cloning preserves the exact emotion and cadence of the original speaker.", trans: "Nuestra clonación de voz neural conserva la emoción y cadencia exacta del hablante." },
-    { orig: "You can seamlessly translate your video into over thirty global languages in minutes.", trans: "Puedes traducir tus videos a más de treinta idiomas globales en minutos." },
-    { orig: "Thank you for watching, and start creating your first multilingual dub today.", trans: "Gracias por ver el video, y comienza a crear tu primer doblaje multilingüe hoy." }
-  ],
-  de: [
-    { orig: "Welcome everyone to our next generation AI studio presentation.", trans: "Herzlich willkommen zu unserer KI-Studio-Präsentation der nächsten Generation." },
-    { orig: "Today we are showcasing automatic video dubbing and voice synchronization.", trans: "Heute präsentieren wir automatische Videosynchronisation und Stimmenabstimmung." },
-    { orig: "Our neural voice cloning preserves the exact emotion and cadence of the original speaker.", trans: "Unser neuronales Stimmenklonen bewahrt die Emotion und den Rhythmus des Sprechers." },
-    { orig: "You can seamlessly translate your video into over thirty global languages in minutes.", trans: "Sie können Ihre Videos in wenigen Minuten in über dreißig Sprachen übersetzen." },
-    { orig: "Thank you for watching, and start creating your first multilingual dub today.", trans: "Vielen Dank fürs Zuschauen, starten Sie noch heute Ihre erste Übersetzung." }
-  ],
-  fr: [
-    { orig: "Welcome everyone to our next generation AI studio presentation.", trans: "Bienvenue à tous à notre présentation du studio d'IA de nouvelle génération." },
-    { orig: "Today we are showcasing automatic video dubbing and voice synchronization.", trans: "Aujourd'hui, nous présentons le doublage vidéo automatique et la synchronisation vocale." },
-    { orig: "Our neural voice cloning preserves the exact emotion and cadence of the original speaker.", trans: "Notre clonage vocal neuronal préserve l'émotion exacte et la cadence de l'orateur." },
-    { orig: "You can seamlessly translate your video into over thirty global languages in minutes.", trans: "Vous pouvez traduire vos vidéos en plus de trente langues en quelques minutes." },
-    { orig: "Thank you for watching, and start creating your first multilingual dub today.", trans: "Merci d'avoir regardé, commencez à créer votre premier doublage dès aujourd'hui." }
-  ],
-  ja: [
-    { orig: "Welcome everyone to our next generation AI studio presentation.", trans: "次世代AIスタジオのプレゼンテーションへようこそ。" },
-    { orig: "Today we are showcasing automatic video dubbing and voice synchronization.", trans: "本日は、自動動画吹き替えと音声同期機能をご紹介します。" },
-    { orig: "Our neural voice cloning preserves the exact emotion and cadence of the original speaker.", trans: "ニューラル音声クローンは、元の話者の感情とリズムを正確に保持します。" },
-    { orig: "You can seamlessly translate your video into over thirty global languages in minutes.", trans: "わずか数分で30以上の世界中の言語に動画をシームレスに翻訳できます。" },
-    { orig: "Thank you for watching, and start creating your first multilingual dub today.", trans: "ご視聴ありがとうございました。本日より最初の吹き替え制作を始めましょう。" }
-  ],
-  en: [
-    { orig: "Welcome everyone to our next generation AI studio presentation.", trans: "Welcome everyone to our next generation AI studio presentation." },
-    { orig: "Today we are showcasing automatic video dubbing and voice synchronization.", trans: "Today we are showcasing automatic video dubbing and voice synchronization." },
-    { orig: "Our neural voice cloning preserves the exact emotion and cadence of the original speaker.", trans: "Our neural voice cloning preserves the exact emotion and cadence of the original speaker." },
-    { orig: "You can seamlessly translate your video into over thirty global languages in minutes.", trans: "You can seamlessly translate your video into over thirty global languages in minutes." },
-    { orig: "Thank you for watching, and start creating your first multilingual dub today.", trans: "Thank you for watching, and start creating your first multilingual dub today." }
-  ]
-};
+// Apply auth middleware to all dubbing routes
+dubbingRouter.use(authenticateToken);
 
-// 1. GENERATE DUBBING TRANSCRIPT TIMELINE (Authenticated)
-dubbingRouter.post('/generate', authenticateToken, (req, res) => {
+// 1. ASYNCHRONOUS FULL DUBBING PIPELINE (Job Queue)
+dubbingRouter.post('/process', (req, res) => {
   try {
-    const { targetLanguage = 'uz', duration = 30 } = req.body;
-    const langCode = targetLanguage.toLowerCase();
-    const pairs = TRANSLATION_MAP[langCode] || TRANSLATION_MAP['uz'];
+    const {
+      projectId,
+      mediaPath,
+      originalLanguage = 'en',
+      targetLanguage = 'uz',
+      voiceId = 'voice-farrux',
+      duration = 30,
+    } = req.body;
 
-    const stepDuration = Math.max(3, duration / pairs.length);
-    const transcript = pairs.map((pair, index) => {
-      const startTime = parseFloat((index * stepDuration).toFixed(2));
-      const endTime = parseFloat(((index + 1) * stepDuration).toFixed(2));
+    let fullFilePath;
+    if (mediaPath) {
+      const cleanName = path.basename(mediaPath);
+      fullFilePath = path.join(uploadsDir, cleanName);
+    }
 
-      return {
-        id: `seg-${randomUUID().slice(0, 8)}`,
-        startTime,
-        endTime,
-        originalText: pair.orig,
-        translatedText: pair.trans,
-        speaker: index % 2 === 0 ? 'Speaker 1' : 'Speaker 2',
-        confidence: 0.96 + Math.random() * 0.03,
-      };
+    const job = JobManager.createJob({
+      userId: req.user.id,
+      projectId,
+      filePath: fullFilePath,
+      originalLanguage,
+      targetLanguage,
+      voiceId,
+      duration,
+    });
+
+    return res.status(202).json({
+      jobId: job.id,
+      status: job.status,
+      message: 'Dubbing pipeline started in background.',
+    });
+  } catch (err) {
+    console.error('Error starting dubbing process:', err);
+    return res.status(500).json({ error: 'Failed to start dubbing job.' });
+  }
+});
+
+// 2. POLL JOB STATUS
+dubbingRouter.get('/jobs/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const job = JobManager.getJob(jobId, req.user.id);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found or unauthorized.' });
+    }
+
+    return res.json({ job });
+  } catch (err) {
+    console.error('Error fetching job status:', err);
+    return res.status(500).json({ error: 'Failed to fetch job status.' });
+  }
+});
+
+// 3. TRANSCRIBE (ASR)
+dubbingRouter.post('/transcribe', async (req, res) => {
+  try {
+    const { mediaPath, duration = 30, language = 'en' } = req.body;
+    let fullFilePath;
+    if (mediaPath) {
+      const cleanName = path.basename(mediaPath);
+      fullFilePath = path.join(uploadsDir, cleanName);
+    }
+
+    const segments = await transcribeAudio({
+      filePath: fullFilePath,
+      duration,
+      language,
     });
 
     return res.json({
-      transcript,
+      segments,
+      segmentCount: segments.length,
+      message: 'Audio transcribed successfully!',
+    });
+  } catch (err) {
+    console.error('Error transcribing audio:', err);
+    return res.status(500).json({ error: 'Failed to transcribe audio.' });
+  }
+});
+
+// 4. TRANSLATE
+dubbingRouter.post('/translate', async (req, res) => {
+  try {
+    const { text, segments, sourceLanguage = 'en', targetLanguage = 'uz' } = req.body;
+
+    if (segments && Array.isArray(segments)) {
+      const translatedSegments = await translateSegments({
+        segments,
+        sourceLanguage,
+        targetLanguage,
+      });
+      return res.json({ segments: translatedSegments });
+    }
+
+    if (text) {
+      const translatedText = await translateText({
+        text,
+        sourceLanguage,
+        targetLanguage,
+      });
+      return res.json({ originalText: text, translatedText, targetLanguage });
+    }
+
+    return res.status(400).json({ error: 'Provide text or segments to translate.' });
+  } catch (err) {
+    console.error('Error translating text:', err);
+    return res.status(500).json({ error: 'Failed to translate content.' });
+  }
+});
+
+// 5. TTS SYNTHESIS
+dubbingRouter.post('/synthesize', async (req, res) => {
+  try {
+    const { text, voiceId = 'voice-farrux', speed = 1.0 } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required for voice synthesis.' });
+    }
+
+    const result = await synthesizeSpeech({
+      text,
+      voiceId,
+      speed,
+    });
+
+    return res.json({
+      audioUrl: result.audioUrl,
+      duration: result.durationEstimate,
+      provider: result.provider,
+      message: 'Speech synthesized successfully!',
+    });
+  } catch (err) {
+    console.error('Error synthesizing speech:', err);
+    return res.status(500).json({ error: 'Failed to synthesize voice audio.' });
+  }
+});
+
+// 6. GENERATE TRANSCRIPT TIMELINE (Synchronous generator)
+dubbingRouter.post('/generate', async (req, res) => {
+  try {
+    const { targetLanguage = 'uz', duration = 30 } = req.body;
+    const rawSegments = await transcribeAudio({ duration });
+    const translatedSegments = await translateSegments({
+      segments: rawSegments,
+      sourceLanguage: 'en',
       targetLanguage,
-      segmentCount: transcript.length,
+    });
+
+    return res.json({
+      transcript: translatedSegments,
+      targetLanguage,
+      segmentCount: translatedSegments.length,
       message: 'AI Dubbing transcript generated successfully!',
     });
   } catch (err) {
@@ -96,8 +185,8 @@ function formatSrtTime(seconds) {
   return `${pad(hrs, 2)}:${pad(mins, 2)}:${pad(secs, 2)},${pad(ms, 3)}`;
 }
 
-// 2. EXPORT SUBTITLES (SRT, VTT, JSON - Authenticated & User-Isolated)
-dubbingRouter.get('/export/:id/:format', authenticateToken, (req, res) => {
+// 7. EXPORT SUBTITLES (SRT, VTT, JSON - Authenticated & User-Isolated)
+dubbingRouter.get('/export/:id/:format', (req, res) => {
   try {
     const { id, format } = req.params;
     const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(id, req.user.id);
@@ -113,7 +202,7 @@ dubbingRouter.get('/export/:id/:format', authenticateToken, (req, res) => {
       let srtContent = '';
       segments.forEach((seg, index) => {
         srtContent += `${index + 1}\n`;
-        srtContent += `${formatSrtTime(seg.startTime)} --> ${formatSrtTime(seg.endTime)}\n`;
+        srtContent += `${formatSrtTime(seg.startTime || 0)} --> ${formatSrtTime(seg.endTime || 0)}\n`;
         srtContent += `${seg.translatedText || seg.originalText}\n\n`;
       });
 
@@ -125,8 +214,8 @@ dubbingRouter.get('/export/:id/:format', authenticateToken, (req, res) => {
     if (format === 'vtt') {
       let vttContent = 'WEBVTT\n\n';
       segments.forEach((seg, index) => {
-        const start = formatSrtTime(seg.startTime).replace(',', '.');
-        const end = formatSrtTime(seg.endTime).replace(',', '.');
+        const start = formatSrtTime(seg.startTime || 0).replace(',', '.');
+        const end = formatSrtTime(seg.endTime || 0).replace(',', '.');
         vttContent += `${index + 1}\n${start} --> ${end}\n${seg.translatedText || seg.originalText}\n\n`;
       });
 
