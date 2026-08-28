@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import type { Project, Voice } from '../types';
 import { VOICES } from '../data/voices';
 import { SUPPORTED_LANGUAGES } from '../data/languages';
@@ -6,28 +7,74 @@ import { VideoPlayer } from '../components/VideoPlayer';
 import { VoiceModal } from '../components/VoiceModal';
 import { ProcessingView } from '../components/ProcessingView';
 import { TranscriptEditor } from '../components/TranscriptEditor';
-import { Download, Sparkles, ArrowLeft, FileText, CheckCircle2 } from 'lucide-react';
+import { Download, Sparkles, ArrowLeft, FileText } from 'lucide-react';
 import { api } from '../services/api';
+import { useToast } from '../context/ToastContext';
 
 interface StudioViewProps {
-  project: Project;
-  onUpdateProject: (updated: Project) => void;
-  onBackToDashboard: () => void;
-  onOpenNewDub: () => void;
+  project?: Project;
+  projects?: Project[];
+  onUpdateProject?: (updated: Project) => void;
+  onBackToDashboard?: () => void;
+  onOpenNewDub?: () => void;
 }
 
 export const StudioView: React.FC<StudioViewProps> = ({
-  project,
+  project: initialProject,
+  projects = [],
   onUpdateProject,
   onBackToDashboard,
   onOpenNewDub,
 }) => {
-  const [isProcessing, setIsProcessing] = useState(project.status === 'processing');
+  const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const { showSuccess, showError } = useToast();
+
+  const [project, setProject] = useState<Project | null>(() => {
+    if (initialProject) return initialProject;
+    if (projectId && projects.length > 0) {
+      return projects.find((p) => p.id === projectId) || null;
+    }
+    return projects[0] || null;
+  });
+
+  useEffect(() => {
+    if (initialProject) {
+      setProject(initialProject);
+    } else if (projectId && projects.length > 0) {
+      const found = projects.find((p) => p.id === projectId);
+      if (found) setProject(found);
+    }
+  }, [initialProject, projectId, projects]);
+
+  const [isProcessing, setIsProcessing] = useState(project?.status === 'processing');
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [activeAudioTrack, setActiveAudioTrack] = useState<'original' | 'dubbed'>(
-    project.status === 'completed' ? 'dubbed' : 'original'
+    project?.status === 'completed' ? 'dubbed' : 'original'
   );
-  const [showExportToast, setShowExportToast] = useState<string | null>(null);
+
+  const handleBack = () => {
+    if (onBackToDashboard) {
+      onBackToDashboard();
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
+  if (!project) {
+    return (
+      <div style={{ backgroundColor: 'var(--c-white)', minHeight: 'calc(100vh - 68px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
+        <div style={{ textAlign: 'center', maxWidth: '400px' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '8px' }}>Project Not Found</h2>
+          <p style={{ fontSize: '14px', color: 'var(--black-60)', marginBottom: '20px' }}>The requested dubbing studio project could not be found or has been removed.</p>
+          <button onClick={handleBack} className="btn btn-primary">
+            <ArrowLeft size={16} style={{ marginRight: '8px' }} />
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const currentVoice = VOICES.find(v => v.id === project.voiceId) || VOICES[1];
 
@@ -37,14 +84,15 @@ export const StudioView: React.FC<StudioViewProps> = ({
       voiceId: voice.id,
       updatedAt: new Date().toISOString(),
     };
-    onUpdateProject(updated);
+    setProject(updated);
+    if (onUpdateProject) onUpdateProject(updated);
     if (api.getToken()) {
       api.projects.update(project.id, { voiceId: voice.id });
     }
+    showSuccess(`Voice changed to ${voice.name}`);
   };
 
   const handleLanguageChange = (field: 'originalLanguage' | 'targetLanguage', value: string) => {
-    // If setting target to uz, default voice to farrux, if es -> elena, etc.
     let newVoiceId = project.voiceId;
     if (field === 'targetLanguage') {
       const matchVoice = VOICES.find(v => v.languageCode === value);
@@ -57,7 +105,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
       voiceId: newVoiceId,
       updatedAt: new Date().toISOString(),
     };
-    onUpdateProject(updated);
+    setProject(updated);
+    if (onUpdateProject) onUpdateProject(updated);
     if (api.getToken()) {
       api.projects.update(project.id, { [field]: value, voiceId: newVoiceId });
     }
@@ -70,7 +119,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
       status: 'processing' as const,
       updatedAt: new Date().toISOString(),
     };
-    onUpdateProject(updated);
+    setProject(updated);
+    if (onUpdateProject) onUpdateProject(updated);
     if (api.getToken()) {
       api.projects.update(project.id, { status: 'processing' });
     }
@@ -84,7 +134,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
       status: 'completed' as const,
       updatedAt: new Date().toISOString(),
     };
-    onUpdateProject(updated);
+    setProject(updated);
+    if (onUpdateProject) onUpdateProject(updated);
     if (api.getToken()) {
       api.projects.update(project.id, { status: 'completed' });
     }
@@ -99,7 +150,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
       transcript: updatedTranscript,
       updatedAt: new Date().toISOString(),
     };
-    onUpdateProject(updated);
+    setProject(updated);
+    if (onUpdateProject) onUpdateProject(updated);
 
     // Synchronize directly with backend SQLite database
     if (api.getToken()) {
@@ -109,36 +161,37 @@ export const StudioView: React.FC<StudioViewProps> = ({
     }
   };
 
-  const handleDownload = (format: 'video' | 'audio' | 'srt') => {
+  const handleDownload = async (format: 'video' | 'audio' | 'srt') => {
     if (format === 'srt') {
       try {
-        api.dubbing.downloadSubtitles(project.id, 'srt');
-      } catch {
+        await api.dubbing.downloadSubtitles(project.id, 'srt');
+        showSuccess('Subtitles exported (.SRT)');
+      } catch (err) {
         // fallback to generating client-side SRT
-        let srtContent = '';
-        project.transcript.forEach((seg, idx) => {
-          srtContent += `${idx + 1}\n00:00:0${Math.floor(seg.startTime)},000 --> 00:00:0${Math.floor(seg.endTime)},000\n${seg.translatedText}\n\n`;
-        });
-        const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${project.title.replace(/\s+/g, '_')}_subtitles.srt`;
-        a.click();
+        try {
+          let srtContent = '';
+          project.transcript.forEach((seg, idx) => {
+            srtContent += `${idx + 1}\n00:00:0${Math.floor(seg.startTime)},000 --> 00:00:0${Math.floor(seg.endTime)},000\n${seg.translatedText}\n\n`;
+          });
+          const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${project.title.replace(/\s+/g, '_')}_subtitles.srt`;
+          a.click();
+          showSuccess('Subtitles exported (.SRT)');
+        } catch {
+          showError('Failed to export subtitles');
+        }
       }
-      setShowExportToast('Subtitles exported (.SRT)');
     } else if (format === 'video') {
       if (project.videoUrl && project.videoUrl.startsWith('http')) {
         window.open(project.videoUrl, '_blank');
       }
-      setShowExportToast('Master dubbed video exported (MP4)');
+      showSuccess('Master dubbed video exported (MP4)');
     } else {
-      setShowExportToast('Master audio exported (WAV)');
+      showSuccess('Master audio exported (WAV)');
     }
-
-    setTimeout(() => {
-      setShowExportToast(null);
-    }, 3000);
   };
 
   return (
@@ -202,29 +255,6 @@ export const StudioView: React.FC<StudioViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* Export Toast Notification */}
-      {showExportToast && (
-        <div style={{
-          position: 'fixed',
-          bottom: '24px',
-          right: '24px',
-          backgroundColor: 'var(--black-100)',
-          color: 'var(--white-100)',
-          padding: '12px 20px',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: '13px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          zIndex: 1000,
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
-          animation: 'fadeIn 150ms ease',
-        }}>
-          <CheckCircle2 size={16} color="#ffffff" />
-          {showExportToast}
-        </div>
-      )}
 
       {/* Workspace Content */}
       {isProcessing ? (

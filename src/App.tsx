@@ -1,26 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import type { ActiveTab, Project } from './types';
 import { INITIAL_PROJECTS } from './data/sampleProjects';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { AuthModal } from './components/AuthModal';
 import { NewDubModal } from './components/NewDubModal';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { DashboardView } from './views/DashboardView';
 import { StudioView } from './views/StudioView';
 import { PricingView } from './views/PricingView';
 import { SignUpView } from './views/SignUpView';
 import { api } from './services/api';
+import { ToastProvider, useToast } from './context/ToastContext';
 
-export function App() {
+function AppContent() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { showSuccess, showError, showInfo } = useToast();
+
   const [userEmail, setUserEmail] = useState<string | null>(() => {
     return localStorage.getItem('dubbing_io_user');
-  });
-
-  // Default directly to 'signup' if user is not authenticated, otherwise 'dashboard'
-  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-    const savedUser = localStorage.getItem('dubbing_io_user');
-    const token = localStorage.getItem('dubbing_io_token');
-    return (savedUser || token) ? 'dashboard' : 'signup';
   });
 
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -35,104 +35,121 @@ export function App() {
     return INITIAL_PROJECTS;
   });
 
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(INITIAL_PROJECTS[0].id);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewDubOpen, setIsNewDubOpen] = useState(false);
 
-  // Authenticate session with backend on initial load
-  useEffect(() => {
-    const verifySession = async () => {
-      const token = api.getToken();
-      if (token) {
+  // Derive activeTab from current route path
+  const currentPath = location.pathname;
+  let activeTab: ActiveTab = 'dashboard';
+  if (currentPath.startsWith('/studio')) activeTab = 'studio';
+  else if (currentPath === '/pricing') activeTab = 'pricing';
+  else if (currentPath === '/signup' || currentPath === '/signin') activeTab = 'signup';
+  else activeTab = 'dashboard';
+
+  // Authenticate session with backend and sync database projects
+  const syncWithBackend = useCallback(async () => {
+    const token = api.getToken();
+    if (token) {
+      try {
+        const res = await api.auth.me();
+        setUserEmail(res.user.email);
+        localStorage.setItem('dubbing_io_user', res.user.email);
+
+        // Fetch persistent user projects from SQLite backend
         try {
-          const res = await api.auth.me();
-          setUserEmail(res.user.email);
-          localStorage.setItem('dubbing_io_user', res.user.email);
-
-          // Fetch user's persistent projects from SQLite database
-          try {
-            const projRes = await api.projects.list();
-            if (projRes.projects && projRes.projects.length > 0) {
-              setProjects(projRes.projects);
-              setActiveProjectId(projRes.projects[0].id);
-            }
-          } catch (err) {
-            console.warn('Could not fetch projects from DB:', err);
+          const projRes = await api.projects.list();
+          if (projRes.projects && projRes.projects.length > 0) {
+            setProjects(projRes.projects);
+            localStorage.setItem('dubbing_io_projects', JSON.stringify(projRes.projects));
           }
-        } catch {
-          api.auth.logout();
-          setUserEmail(null);
-          setActiveTab('signup');
+        } catch (err: any) {
+          console.warn('Could not sync projects from backend:', err);
         }
+      } catch {
+        api.auth.logout();
+        setUserEmail(null);
       }
-    };
-
-    verifySession();
+    }
   }, []);
 
-  // Persist projects to localStorage
+  useEffect(() => {
+    syncWithBackend();
+  }, [syncWithBackend]);
+
+  // Persist offline cache to localStorage
   useEffect(() => {
     localStorage.setItem('dubbing_io_projects', JSON.stringify(projects));
   }, [projects]);
 
-  const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
+  const handleNavigate = (tab: ActiveTab) => {
+    if (tab === 'dashboard') navigate('/dashboard');
+    else if (tab === 'pricing') navigate('/pricing');
+    else if (tab === 'signup') navigate('/signup');
+    else if (tab === 'studio') {
+      const targetId = projects.length > 0 ? projects[0].id : 'new';
+      navigate(`/studio/${targetId}`);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleOpenProject = (proj: Project) => {
-    setActiveProjectId(proj.id);
-    setActiveTab('studio');
+    navigate(`/studio/${proj.id}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleCreateProject = async (newProj: Project) => {
-    setProjects(prev => [newProj, ...prev]);
-    setActiveProjectId(newProj.id);
-    setActiveTab('studio');
+    // Optimistic state update
+    setProjects((prev) => [newProj, ...prev]);
+    navigate(`/studio/${newProj.id}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (api.getToken()) {
       try {
         await api.projects.create(newProj);
-      } catch (err) {
-        console.warn('Could not save project to database:', err);
+        showSuccess('Project created and saved to database!');
+      } catch (err: any) {
+        showError(err.message || 'Could not save project to database');
       }
     }
   };
 
   const handleUpdateProject = async (updated: Project) => {
-    setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+    setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     if (api.getToken()) {
       try {
         await api.projects.update(updated.id, updated);
-      } catch (err) {
-        console.warn('Could not update project in DB:', err);
+      } catch (err: any) {
+        showError(err.message || 'Could not update project in database');
       }
     }
   };
 
   const handleRenameProject = async (projectId: string, newTitle: string) => {
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, title: newTitle, updatedAt: new Date().toISOString() } : p));
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId
+          ? { ...p, title: newTitle, updatedAt: new Date().toISOString() }
+          : p
+      )
+    );
     if (api.getToken()) {
       try {
         await api.projects.update(projectId, { title: newTitle });
-      } catch (err) {
-        console.warn('Could not rename project in DB:', err);
+        showSuccess('Project renamed successfully');
+      } catch (err: any) {
+        showError(err.message || 'Could not rename project');
       }
     }
   };
 
   const handleDeleteProject = async (projId: string) => {
-    setProjects(prev => prev.filter(p => p.id !== projId));
-    if (activeProjectId === projId) {
-      const remaining = projects.filter(p => p.id !== projId);
-      if (remaining.length > 0) {
-        setActiveProjectId(remaining[0].id);
-      }
-    }
+    setProjects((prev) => prev.filter((p) => p.id !== projId));
     if (api.getToken()) {
       try {
         await api.projects.delete(projId);
-      } catch (err) {
-        console.warn('Could not delete project from DB:', err);
+        showSuccess('Project deleted successfully');
+      } catch (err: any) {
+        showError(err.message || 'Could not delete project from database');
       }
     }
   };
@@ -140,27 +157,17 @@ export function App() {
   const handleAuthSuccess = async (email: string) => {
     setUserEmail(email);
     localStorage.setItem('dubbing_io_user', email);
-    setActiveTab('dashboard');
+    showSuccess(`Welcome back, ${email.split('@')[0]}!`);
+    await syncWithBackend();
+    navigate('/dashboard');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    // Sync projects from database
-    if (api.getToken()) {
-      try {
-        const projRes = await api.projects.list();
-        if (projRes.projects && projRes.projects.length > 0) {
-          setProjects(projRes.projects);
-          setActiveProjectId(projRes.projects[0].id);
-        }
-      } catch (err) {
-        console.warn('Could not load database projects:', err);
-      }
-    }
   };
 
   const handleLogout = () => {
     api.auth.logout();
     setUserEmail(null);
-    setActiveTab('signup');
+    showInfo('Logged out successfully');
+    navigate('/signup');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -168,87 +175,103 @@ export function App() {
     setIsNewDubOpen(true);
   };
 
-  // Dedicated Full-Screen Experience for Sign Up (Default Entry Point)
-  if (activeTab === 'signup') {
-    return (
-      <div className="app-container">
-        <SignUpView
-          onNavigate={(tab) => {
-            setActiveTab(tab);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          onSuccess={handleAuthSuccess}
-          onOpenSignIn={() => setIsAuthOpen(true)}
-        />
-
-        <AuthModal
-          isOpen={isAuthOpen}
-          onClose={() => setIsAuthOpen(false)}
-          onSuccess={handleAuthSuccess}
-          onNavigateToSignUp={() => {
-            setIsAuthOpen(false);
-            setActiveTab('signup');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        />
-      </div>
-    );
-  }
+  const isAuthPage = location.pathname === '/signup' || location.pathname === '/signin';
 
   return (
     <div className="app-container">
-      {/* Universal Navigation */}
-      <Navbar
-        activeTab={activeTab}
-        onNavigate={(tab) => {
-          setActiveTab(tab);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenNewDub={() => setIsNewDubOpen(true)}
-        isAuthenticated={!!userEmail}
-        onLogout={handleLogout}
-      />
+      {/* Universal Navigation Header */}
+      {!isAuthPage && (
+        <Navbar
+          activeTab={activeTab}
+          onNavigate={handleNavigate}
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onOpenNewDub={() => setIsNewDubOpen(true)}
+          isAuthenticated={!!userEmail}
+          onLogout={handleLogout}
+        />
+      )}
 
-      {/* Main View Router */}
+      {/* Main View Routes */}
       <main className="main-content">
-        {activeTab === 'dashboard' && (
-          <DashboardView
-            projects={projects}
-            onOpenProject={handleOpenProject}
-            onCreateProject={handleCreateProject}
-            onOpenNewDub={() => setIsNewDubOpen(true)}
-            onDeleteProject={handleDeleteProject}
-            onRenameProject={handleRenameProject}
+        <Routes>
+          {/* Default Root Redirect */}
+          <Route
+            path="/"
+            element={
+              userEmail ? <Navigate to="/dashboard" replace /> : <Navigate to="/signup" replace />
+            }
           />
-        )}
 
-        {activeTab === 'studio' && activeProject && (
-          <StudioView
-            project={activeProject}
-            onUpdateProject={handleUpdateProject}
-            onBackToDashboard={() => {
-              setActiveTab('dashboard');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            onOpenNewDub={() => setIsNewDubOpen(true)}
+          {/* Sign Up / Sign In Page */}
+          <Route
+            path="/signup"
+            element={
+              <SignUpView
+                onNavigate={handleNavigate}
+                onSuccess={handleAuthSuccess}
+                onOpenSignIn={() => setIsAuthOpen(true)}
+              />
+            }
           />
-        )}
+          <Route
+            path="/signin"
+            element={
+              <SignUpView
+                onNavigate={handleNavigate}
+                onSuccess={handleAuthSuccess}
+                onOpenSignIn={() => setIsAuthOpen(true)}
+              />
+            }
+          />
 
-        {activeTab === 'pricing' && (
-          <PricingView
-            onSelectPlan={handleSelectPlan}
+          {/* Dashboard View (Protected) */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute isAuthenticated={!!userEmail}>
+                <DashboardView
+                  projects={projects}
+                  onOpenProject={handleOpenProject}
+                  onCreateProject={handleCreateProject}
+                  onOpenNewDub={() => setIsNewDubOpen(true)}
+                  onDeleteProject={handleDeleteProject}
+                  onRenameProject={handleRenameProject}
+                />
+              </ProtectedRoute>
+            }
           />
-        )}
+
+          {/* Studio View (Protected, Dynamic Route by Project ID) */}
+          <Route
+            path="/studio/:projectId"
+            element={
+              <ProtectedRoute isAuthenticated={!!userEmail}>
+                <StudioView
+                  projects={projects}
+                  onUpdateProject={handleUpdateProject}
+                  onBackToDashboard={() => {
+                    navigate('/dashboard');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  onOpenNewDub={() => setIsNewDubOpen(true)}
+                />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Pricing View */}
+          <Route
+            path="/pricing"
+            element={<PricingView onSelectPlan={handleSelectPlan} />}
+          />
+
+          {/* Fallback to Root */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
 
       {/* Architectural Footer */}
-      <Footer
-        onNavigate={(tab) => {
-          setActiveTab(tab);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      />
+      {!isAuthPage && <Footer onNavigate={handleNavigate} />}
 
       {/* Global Modals */}
       <AuthModal
@@ -257,7 +280,7 @@ export function App() {
         onSuccess={handleAuthSuccess}
         onNavigateToSignUp={() => {
           setIsAuthOpen(false);
-          setActiveTab('signup');
+          navigate('/signup');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
       />
@@ -268,6 +291,16 @@ export function App() {
         onCreateProject={handleCreateProject}
       />
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
+    </BrowserRouter>
   );
 }
 
