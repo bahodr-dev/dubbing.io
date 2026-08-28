@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# SQLite Temporary Files
+database/*.db-wal
+database/*.db-shm
+
+# Media Uploads
+uploads/*
+!uploads/.gitkeep

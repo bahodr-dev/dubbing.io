@@ -239,7 +239,7 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
                   Entering Studio...
                 </>
               ) : (
-                'Enter Studio →'
+                'Enter Studio'
               )}
             </button>
           </div>
