@@ -185,6 +185,22 @@ export function initDatabase() {
     )
   `);
 
+  // Auto-migrate schema for backward compatibility
+  try {
+    const projectColumns = db.prepare(`PRAGMA table_info(projects)`).all().map(c => c.name);
+    const requiredCols = [
+      { name: 'description', type: 'TEXT' },
+      { name: 'voice_id', type: "TEXT DEFAULT 'voice-farrux'" },
+      { name: 'file_size', type: "TEXT DEFAULT '12.4 MB'" },
+      { name: 'video_quality', type: "TEXT DEFAULT '1080p'" },
+    ];
+    for (const col of requiredCols) {
+      if (!projectColumns.includes(col.name)) {
+        db.exec(`ALTER TABLE projects ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
+  } catch (_) {}
+
   // Voices Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS voices (

@@ -66,8 +66,8 @@ mediaRouter.post('/upload', authenticateToken, upload.single('file'), (req, res)
   }
 });
 
-// 2. PARSE VIDEO URL (Authenticated)
-mediaRouter.post('/extract-url', authenticateToken, (req, res) => {
+// 2. PARSE VIDEO URL (Authenticated with oEmbed metadata resolver)
+mediaRouter.post('/extract-url', authenticateToken, async (req, res) => {
   try {
     const { url } = req.body;
     if (!url) {
@@ -78,12 +78,24 @@ mediaRouter.post('/extract-url', authenticateToken, (req, res) => {
     let thumbnailUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
     let duration = 30;
 
-    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      parsedTitle = 'YouTube Video Import';
-      thumbnailUrl = 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800&auto=format&fit=crop&q=80';
-    } else if (url.includes('vimeo.com')) {
-      parsedTitle = 'Vimeo Studio Stream';
-      thumbnailUrl = 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80';
+    // Fetch real metadata via oEmbed
+    try {
+      const oembedRes = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
+      if (oembedRes.ok) {
+        const data = await oembedRes.json();
+        if (data.title) parsedTitle = data.title;
+        if (data.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+      }
+    } catch (_) {}
+
+    if (parsedTitle === 'Web Video Stream') {
+      if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        parsedTitle = 'YouTube Video Stream';
+        thumbnailUrl = 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800&auto=format&fit=crop&q=80';
+      } else if (url.includes('vimeo.com')) {
+        parsedTitle = 'Vimeo Studio Stream';
+        thumbnailUrl = 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80';
+      }
     }
 
     return res.json({
@@ -91,7 +103,7 @@ mediaRouter.post('/extract-url', authenticateToken, (req, res) => {
       title: parsedTitle,
       thumbnailUrl,
       duration,
-      message: 'Video URL parsed successfully!',
+      message: 'Video metadata resolved successfully!',
     });
   } catch (err) {
     console.error('Error extracting URL:', err);
