@@ -10,6 +10,7 @@ import { TranscriptEditor } from '../components/TranscriptEditor';
 import { Download, Sparkles, ArrowLeft, FileText } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { Logo } from '../components/Logo';
 
 interface StudioViewProps {
   project?: Project;
@@ -217,7 +218,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--black-40)' }}>dubbing.io</span>
+            <Logo size={16} />
+            <span style={{ fontSize: '13px', color: 'var(--black-60)', fontWeight: 600 }}>dubbing.io</span>
             <span style={{ color: 'var(--black-20)' }}>/</span>
             <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--black-100)' }}>
               {project.title}

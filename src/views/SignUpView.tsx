@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { ActiveTab } from '../types';
 import { Check, X, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
+import { Logo } from '../components/Logo';
 
 interface SignUpViewProps {
   onNavigate?: (tab: ActiveTab) => void;
@@ -132,20 +133,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             zIndex: 2,
           }}
         >
-          <div style={{
-            width: '20px',
-            height: '20px',
-            backgroundColor: '#ffffff',
-            borderRadius: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '2px',
-          }}>
-            <div style={{ width: '2px', height: '9px', backgroundColor: '#000000', borderRadius: '0.5px' }}></div>
-            <div style={{ width: '2px', height: '14px', backgroundColor: '#000000', borderRadius: '0.5px' }}></div>
-            <div style={{ width: '2px', height: '6px', backgroundColor: '#000000', borderRadius: '0.5px' }}></div>
-          </div>
+          <Logo size={24} />
           <span style={{
             fontSize: '15.5px',
             fontWeight: 800,

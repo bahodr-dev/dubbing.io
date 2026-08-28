@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Sparkles } from 'lucide-react';
 import type { ActiveTab } from '../types';
+import { Logo } from './Logo';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -8,7 +9,7 @@ interface NavbarProps {
   onOpenAuth: () => void;
   onOpenNewDub: () => void;
   isAuthenticated: boolean;
-  onLogout: () => void;
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -51,20 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             userSelect: 'none',
           }}
         >
-          <div style={{
-            width: '20px',
-            height: '20px',
-            backgroundColor: 'var(--black-100)',
-            borderRadius: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '2px',
-          }}>
-            <div style={{ width: '2px', height: '9px', backgroundColor: 'var(--white-100)', borderRadius: '0.5px' }}></div>
-            <div style={{ width: '2px', height: '14px', backgroundColor: 'var(--white-100)', borderRadius: '0.5px' }}></div>
-            <div style={{ width: '2px', height: '6px', backgroundColor: 'var(--white-100)', borderRadius: '0.5px' }}></div>
-          </div>
+          <Logo size={22} />
           <span style={{
             fontSize: '15.5px',
             fontWeight: 800,
@@ -292,7 +280,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       type="button"
                       onClick={() => {
                         setIsAccountMenuOpen(false);
-                        onLogout();
+                        onLogout?.();
                       }}
                       style={{
                         width: '100%',

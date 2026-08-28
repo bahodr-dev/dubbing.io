@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ActiveTab } from '../types';
+import { Logo } from './Logo';
 
 interface FooterProps {
   onNavigate: (tab: ActiveTab) => void;
@@ -16,7 +17,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
       <div className="container-xl">
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2fr 1fr 1fr 1fr',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: '48px',
           marginBottom: '64px',
         }}>
@@ -32,20 +33,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                 userSelect: 'none',
               }}
             >
-              <div style={{
-                width: '20px',
-                height: '20px',
-                backgroundColor: 'var(--black-100)',
-                borderRadius: 'var(--radius-xs)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '2px',
-              }}>
-                <div style={{ width: '2.5px', height: '10px', backgroundColor: 'var(--white-100)', borderRadius: '1px' }}></div>
-                <div style={{ width: '2.5px', height: '14px', backgroundColor: 'var(--white-100)', borderRadius: '1px' }}></div>
-                <div style={{ width: '2.5px', height: '6px', backgroundColor: 'var(--white-100)', borderRadius: '1px' }}></div>
-              </div>
+              <Logo size={24} />
               <span style={{ fontSize: '16px', fontWeight: 800, letterSpacing: '-0.04em' }}>dubbing.io</span>
             </div>
             <p style={{
