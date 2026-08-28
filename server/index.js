@@ -8,6 +8,7 @@ import { projectsRouter } from './routes/projects.js';
 import { mediaRouter } from './routes/media.js';
 import { voicesRouter } from './routes/voices.js';
 import { dubbingRouter } from './routes/dubbing.js';
+import { apiLimiter, authLimiter, uploadLimiter } from './middleware/rateLimiter.js';
 
 dotenv.config();
 
@@ -25,6 +26,9 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
+// Apply General Rate Limiter to all /api routes
+app.use('/api', apiLimiter);
+
 // Serve Uploaded Media Files Statically
 app.use('/uploads', express.static(uploadsDir));
 
@@ -34,10 +38,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Routes
-app.use('/api/auth', authRouter);
+// API Routes with specific rate limiters where appropriate
+app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/projects', projectsRouter);
-app.use('/api/media', mediaRouter);
+app.use('/api/media', uploadLimiter, mediaRouter);
 app.use('/api/voices', voicesRouter);
 app.use('/api/dubbing', dubbingRouter);
 

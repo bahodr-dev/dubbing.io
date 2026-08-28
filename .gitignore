@@ -23,10 +23,16 @@ dist-ssr
 *.sln
 *.sw?
 
-# SQLite Temporary Files
+# SQLite Database Files
+database/*.db
 database/*.db-wal
 database/*.db-shm
 
 # Media Uploads
 uploads/*
 !uploads/.gitkeep
+
+# Environment variables
+.env
+.env.*
+!.env.example

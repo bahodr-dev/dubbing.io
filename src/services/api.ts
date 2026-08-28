@@ -175,14 +175,31 @@ class ApiClient {
       return `${this.baseUrl}/dubbing/export/${projectId}/${format}`;
     },
 
-    downloadSubtitles: (projectId: string, format: 'srt' | 'vtt' | 'json') => {
-      const url = `${this.baseUrl}/dubbing/export/${projectId}/${format}`;
+    downloadSubtitles: async (projectId: string, format: 'srt' | 'vtt' | 'json', filename?: string): Promise<void> => {
+      const token = this.getToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${this.baseUrl}/dubbing/export/${projectId}/${format}`, {
+        headers,
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to export subtitles.');
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `subtitles.${format}`);
+      link.href = blobUrl;
+      link.setAttribute('download', filename || `subtitles-${projectId}.${format}`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
     },
   };
 

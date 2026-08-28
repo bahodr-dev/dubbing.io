@@ -1,6 +1,14 @@
 import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'dubbing_io_super_secure_jwt_secret_key_2026';
+dotenv.config();
+
+const secret = process.env.JWT_SECRET;
+if (!secret) {
+  throw new Error('FATAL SECURITY ERROR: JWT_SECRET environment variable is missing in .env');
+}
+
+export const JWT_SECRET = secret;
 
 export function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];

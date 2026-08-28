@@ -3,32 +3,36 @@ import multer from 'multer';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { uploadsDir } from '../db.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 export const mediaRouter = Router();
 
-// Configure Multer storage
+const ALLOWED_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.mkv', '.mp3', '.wav', '.aac', '.ogg', '.m4a']);
+const ALLOWED_MIMES = new Set([
+  'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska',
+  'audio/mpeg', 'audio/wav', 'audio/webm', 'audio/aac', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'
+]);
+
+// Configure Multer storage with strict extension validation and UUID naming
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, uploadsDir);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.mp4';
-    const uniqueId = randomUUID().slice(0, 12);
-    cb(null, `media-${Date.now()}-${uniqueId}${ext}`);
+    const rawExt = path.extname(file.originalname).toLowerCase();
+    const safeExt = ALLOWED_EXTENSIONS.has(rawExt) ? rawExt : '.mp4';
+    const uniqueId = randomUUID();
+    cb(null, `media-${Date.now()}-${uniqueId}${safeExt}`);
   },
 });
 
-// File filter for audio and video files
+// Strict file filter for permitted audio and video files
 const fileFilter = (_req, file, cb) => {
-  const allowed = [
-    'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska',
-    'audio/mpeg', 'audio/wav', 'audio/webm', 'audio/aac', 'audio/ogg', 'audio/mp4'
-  ];
-
-  if (allowed.includes(file.mimetype) || file.originalname.match(/\.(mp4|mov|webm|mkv|mp3|wav|aac|ogg|m4a)$/i)) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (ALLOWED_EXTENSIONS.has(ext) && (ALLOWED_MIMES.has(file.mimetype) || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/'))) {
     cb(null, true);
   } else {
-    cb(new Error('Only video (MP4, MOV, WEBM) and audio (MP3, WAV) files are supported.'));
+    cb(new Error('Invalid file type. Only standard video (MP4, MOV, WEBM, MKV) and audio (MP3, WAV, AAC, OGG, M4A) formats are permitted.'));
   }
 };
 
@@ -38,8 +42,8 @@ const upload = multer({
   limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB limit
 });
 
-// 1. UPLOAD MEDIA FILE
-mediaRouter.post('/upload', upload.single('file'), (req, res) => {
+// 1. UPLOAD MEDIA FILE (Authenticated)
+mediaRouter.post('/upload', authenticateToken, upload.single('file'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No media file provided.' });
@@ -62,8 +66,8 @@ mediaRouter.post('/upload', upload.single('file'), (req, res) => {
   }
 });
 
-// 2. PARSE VIDEO URL (YouTube, Vimeo, Direct media)
-mediaRouter.post('/extract-url', (req, res) => {
+// 2. PARSE VIDEO URL (Authenticated)
+mediaRouter.post('/extract-url', authenticateToken, (req, res) => {
   try {
     const { url } = req.body;
     if (!url) {

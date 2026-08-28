@@ -54,11 +54,60 @@ npm run preview
 
 ---
 
+## 🔐 Environment Setup
+
+Create a `.env` file in the project root based on `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+Set the mandatory `JWT_SECRET` key and any optional AI provider API keys:
+
+```env
+# Server
+PORT=5000
+NODE_ENV=development
+
+# Authentication & Security (Mandatory)
+JWT_SECRET=your_super_secret_jwt_key_here_change_in_production
+
+# Optional AI Providers (Whisper / DeepL / ElevenLabs)
+OPENAI_API_KEY=
+ELEVENLABS_API_KEY=
+DEEPL_API_KEY=
+```
+
+> **Security Note**: Never commit `.env` to version control. The server will fail to start if `JWT_SECRET` is missing.
+
+---
+
+## 🛡️ API Route Security Matrix
+
+| Route | Method | Access Level | Description |
+| :--- | :--- | :--- | :--- |
+| `/api/auth/signup` | POST | Public (Rate Limited) | Register a new user account with hashed password |
+| `/api/auth/signin` | POST | Public (Rate Limited) | Authenticate user and issue 30-day JWT |
+| `/api/auth/oauth` | POST | Public | Social OAuth login integration (Google/GitHub) |
+| `/api/auth/me` | GET | Protected | Get profile for current authenticated user |
+| `/api/projects` | GET, POST | Protected | Fetch or create projects isolated to current user |
+| `/api/projects/:id` | PUT, DELETE | Protected | Update metadata or delete project (`user_id = ?`) |
+| `/api/projects/:id/transcript` | PUT | Protected | Synchronize transcript segments (`user_id = ?`) |
+| `/api/projects/:id/duplicate` | POST | Protected | Duplicate user's existing project (`user_id = ?`) |
+| `/api/media/upload` | POST | Protected (Rate Limited) | Upload audio/video with strict extension whitelist |
+| `/api/media/extract-url` | POST | Protected | Parse stream metadata from external video URLs |
+| `/api/voices` | GET | Public | Fetch available studio and cloned voices |
+| `/api/voices/clone` | POST | Protected | Clone and save custom neural voice profile |
+| `/api/dubbing/generate` | POST | Protected | Generate AI dubbing transcript timeline |
+| `/api/dubbing/export/:id/:format` | GET | Protected | Export SRT / VTT / JSON subtitles (`user_id = ?`) |
+
+---
+
 ## 🛠️ Tech Stack
-- **Framework**: React 19 + TypeScript
-- **Bundler & Tooling**: Vite
-- **Styling**: Pure Architectural Vanilla CSS (Custom Design System)
-- **Audio Engine**: Web Audio API + Formant Acoustics
+- **Frontend**: React 19 + TypeScript + Vite, Vanilla CSS (Monochrome Luxury System)
+- **Backend**: Node.js + Express 5, `better-sqlite3` with WAL mode
+- **Security**: JWT Authentication, `bcryptjs`, `express-rate-limit`, UUID file sandboxing
+- **Audio Engine**: Web Audio API acoustics + Speech Synthesis
 - **Icons**: Lucide React
 
 ---

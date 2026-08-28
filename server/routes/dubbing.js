@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { db } from '../db.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 export const dubbingRouter = Router();
 
@@ -50,8 +51,8 @@ const TRANSLATION_MAP = {
   ]
 };
 
-// 1. GENERATE DUBBING TRANSCRIPT TIMELINE
-dubbingRouter.post('/generate', (req, res) => {
+// 1. GENERATE DUBBING TRANSCRIPT TIMELINE (Authenticated)
+dubbingRouter.post('/generate', authenticateToken, (req, res) => {
   try {
     const { targetLanguage = 'uz', duration = 30 } = req.body;
     const langCode = targetLanguage.toLowerCase();
@@ -95,14 +96,14 @@ function formatSrtTime(seconds) {
   return `${pad(hrs, 2)}:${pad(mins, 2)}:${pad(secs, 2)},${pad(ms, 3)}`;
 }
 
-// 2. EXPORT SUBTITLES (SRT, VTT, JSON)
-dubbingRouter.get('/export/:id/:format', (req, res) => {
+// 2. EXPORT SUBTITLES (SRT, VTT, JSON - Authenticated & User-Isolated)
+dubbingRouter.get('/export/:id/:format', authenticateToken, (req, res) => {
   try {
     const { id, format } = req.params;
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+    const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(id, req.user.id);
 
     if (!project) {
-      return res.status(404).json({ error: 'Project not found.' });
+      return res.status(404).json({ error: 'Project not found or unauthorized.' });
     }
 
     const segments = project.segments_json ? JSON.parse(project.segments_json) : [];
