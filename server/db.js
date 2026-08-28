@@ -158,9 +158,45 @@ export function initDatabase() {
       password_hash TEXT,
       provider TEXT DEFAULT 'email',
       avatar_url TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // OAuth Accounts Table (Supports Google, GitHub, Microsoft linked to user)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS oauth_accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      provider_account_id TEXT NOT NULL,
+      provider_email TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(provider, provider_account_id),
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+  `);
+
+  // OAuth State Table (Secure PKCE & state verification against CSRF)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      code_verifier TEXT,
+      redirect_url TEXT,
+      expires_at INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Auto-migrate schema for backward compatibility
+  try {
+    const userColumns = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
+    if (!userColumns.includes('updated_at')) {
+      db.exec(`ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`);
+    }
+  } catch (_) {}
 
   // Projects Table
   db.exec(`

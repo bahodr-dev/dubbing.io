@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { api } from '../services/api';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -17,10 +18,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setError('Please fill in all fields.');
@@ -31,13 +33,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
     setError('');
-    onSuccess(email);
-    onClose();
+    setIsSubmitting(true);
+
+    try {
+      if (mode === 'signup') {
+        const res = await api.auth.signup(email, password);
+        onSuccess(res.user.email);
+        onClose();
+      } else {
+        const res = await api.auth.signin(email, password);
+        onSuccess(res.user.email);
+        onClose();
+      }
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      setError(errorObj.message || 'Authentication failed. Please check your credentials.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleGoogleAuth = () => {
-    onSuccess('bahodir@dubbing.io');
-    onClose();
+    window.location.assign('/api/auth/google');
   };
 
   return (
@@ -133,10 +150,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <button
               type="submit"
+              disabled={isSubmitting}
               className="btn btn-primary"
               style={{ width: '100%', padding: '12px 18px', fontSize: '15px' }}
             >
-              Continue →
+              {isSubmitting ? 'Signing in...' : 'Continue →'}
             </button>
           </form>
 

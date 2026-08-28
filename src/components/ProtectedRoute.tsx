@@ -10,9 +10,9 @@ interface ProtectedRouteProps {
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, isAuthenticated }) => {
   const location = useLocation();
   const token = api.getToken();
-  const savedUser = localStorage.getItem('dubbing_io_user');
 
-  const isAuth = isAuthenticated !== undefined ? isAuthenticated : Boolean(token || savedUser);
+  // If explicit isAuthenticated passed, respect it; otherwise check active session token
+  const isAuth = isAuthenticated !== undefined ? isAuthenticated : Boolean(token);
 
   if (!isAuth) {
     return <Navigate to="/signup" state={{ from: location }} replace />;

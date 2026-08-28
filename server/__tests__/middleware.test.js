@@ -7,7 +7,7 @@ describe('Auth Middleware Security Tests', () => {
     const res = await request(app).get('/api/projects');
     expect(res.status).toBe(401);
     expect(res.body).toHaveProperty('error');
-    expect(res.body.error).toMatch(/token required/i);
+    expect(res.body.error).toMatch(/authentication required|token required|no session token/i);
   });
 
   it('rejects tampered or malformed JWT tokens with 403 Forbidden', async () => {

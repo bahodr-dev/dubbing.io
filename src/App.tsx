@@ -38,6 +38,18 @@ function AppContent() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewDubOpen, setIsNewDubOpen] = useState(false);
 
+  // 1. Check for OAuth callback token in URL query parameter
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get('token');
+    if (tokenParam) {
+      api.setToken(tokenParam);
+      // Clean query parameter from browser address bar
+      window.history.replaceState({}, document.title, window.location.pathname);
+      syncWithBackend();
+    }
+  }, []);
+
   // Derive activeTab from current route path
   const currentPath = location.pathname;
   let activeTab: ActiveTab = 'dashboard';
@@ -48,27 +60,26 @@ function AppContent() {
 
   // Authenticate session with backend and sync database projects
   const syncWithBackend = useCallback(async () => {
-    const token = api.getToken();
-    if (token) {
-      try {
-        const res = await api.auth.me();
-        setUserEmail(res.user.email);
-        localStorage.setItem('dubbing_io_user', res.user.email);
+    try {
+      const res = await api.auth.me();
+      setUserEmail(res.user.email);
+      localStorage.setItem('dubbing_io_user', res.user.email);
 
-        // Fetch persistent user projects from SQLite backend
-        try {
-          const projRes = await api.projects.list();
-          if (projRes.projects && projRes.projects.length > 0) {
-            setProjects(projRes.projects);
-            localStorage.setItem('dubbing_io_projects', JSON.stringify(projRes.projects));
-          }
-        } catch (err: any) {
-          console.warn('Could not sync projects from backend:', err);
+      // Fetch persistent user projects from SQLite backend
+      try {
+        const projRes = await api.projects.list();
+        if (projRes.projects && projRes.projects.length > 0) {
+          setProjects(projRes.projects);
+          localStorage.setItem('dubbing_io_projects', JSON.stringify(projRes.projects));
         }
-      } catch {
-        api.auth.logout();
-        setUserEmail(null);
+      } catch (err: unknown) {
+        console.warn('Could not sync projects from backend:', err);
       }
+    } catch {
+      // Session invalid or expired
+      setUserEmail(null);
+      localStorage.removeItem('dubbing_io_user');
+      api.removeToken();
     }
   }, []);
 
@@ -98,29 +109,26 @@ function AppContent() {
   };
 
   const handleCreateProject = async (newProj: Project) => {
-    // Optimistic state update
     setProjects((prev) => [newProj, ...prev]);
     navigate(`/studio/${newProj.id}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    if (api.getToken()) {
-      try {
-        await api.projects.create(newProj);
-        showSuccess('Project created and saved to database!');
-      } catch (err: any) {
-        showError(err.message || 'Could not save project to database');
-      }
+    try {
+      await api.projects.create(newProj);
+      showSuccess('Project created and saved to database!');
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      showError(errorObj.message || 'Could not save project to database');
     }
   };
 
   const handleUpdateProject = async (updated: Project) => {
     setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-    if (api.getToken()) {
-      try {
-        await api.projects.update(updated.id, updated);
-      } catch (err: any) {
-        showError(err.message || 'Could not update project in database');
-      }
+    try {
+      await api.projects.update(updated.id, updated);
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      showError(errorObj.message || 'Could not update project in database');
     }
   };
 
@@ -132,25 +140,23 @@ function AppContent() {
           : p
       )
     );
-    if (api.getToken()) {
-      try {
-        await api.projects.update(projectId, { title: newTitle });
-        showSuccess('Project renamed successfully');
-      } catch (err: any) {
-        showError(err.message || 'Could not rename project');
-      }
+    try {
+      await api.projects.update(projectId, { title: newTitle });
+      showSuccess('Project renamed successfully');
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      showError(errorObj.message || 'Could not rename project');
     }
   };
 
   const handleDeleteProject = async (projId: string) => {
     setProjects((prev) => prev.filter((p) => p.id !== projId));
-    if (api.getToken()) {
-      try {
-        await api.projects.delete(projId);
-        showSuccess('Project deleted successfully');
-      } catch (err: any) {
-        showError(err.message || 'Could not delete project from database');
-      }
+    try {
+      await api.projects.delete(projId);
+      showSuccess('Project deleted successfully');
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      showError(errorObj.message || 'Could not delete project from database');
     }
   };
 
@@ -163,9 +169,10 @@ function AppContent() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleLogout = () => {
-    api.auth.logout();
+  const handleLogout = async () => {
+    await api.auth.logout();
     setUserEmail(null);
+    localStorage.removeItem('dubbing_io_user');
     showInfo('Logged out successfully');
     navigate('/signup');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -202,25 +209,33 @@ function AppContent() {
             }
           />
 
-          {/* Sign Up / Sign In Page */}
+          {/* Sign Up / Sign In Page (Redirects to /dashboard if authenticated) */}
           <Route
             path="/signup"
             element={
-              <SignUpView
-                onNavigate={handleNavigate}
-                onSuccess={handleAuthSuccess}
-                onOpenSignIn={() => setIsAuthOpen(true)}
-              />
+              userEmail ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <SignUpView
+                  onNavigate={handleNavigate}
+                  onSuccess={handleAuthSuccess}
+                  onOpenSignIn={() => setIsAuthOpen(true)}
+                />
+              )
             }
           />
           <Route
             path="/signin"
             element={
-              <SignUpView
-                onNavigate={handleNavigate}
-                onSuccess={handleAuthSuccess}
-                onOpenSignIn={() => setIsAuthOpen(true)}
-              />
+              userEmail ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <SignUpView
+                  onNavigate={handleNavigate}
+                  onSuccess={handleAuthSuccess}
+                  onOpenSignIn={() => setIsAuthOpen(true)}
+                />
+              )
             }
           />
 
@@ -294,7 +309,7 @@ function AppContent() {
   );
 }
 
-export function App() {
+export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
@@ -303,5 +318,3 @@ export function App() {
     </BrowserRouter>
   );
 }
-
-export default App;

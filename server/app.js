@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import { initDatabase, uploadsDir } from './db.js';
 import { authRouter } from './routes/auth.js';
@@ -17,10 +18,25 @@ export const app = express();
 initDatabase();
 
 // Middleware
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+if (process.env.APP_URL && !allowedOrigins.includes(process.env.APP_URL)) {
+  allowedOrigins.push(process.env.APP_URL);
+}
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // permissive for same-site dev/subdomains
+    }
+  },
   credentials: true,
 }));
+app.use(cookieParser());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 

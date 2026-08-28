@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AuthModal } from '../components/AuthModal';
+import { api } from '../services/api';
 
 describe('AuthModal Component', () => {
   it('does not render when isOpen is false', () => {
@@ -18,9 +19,21 @@ describe('AuthModal Component', () => {
     expect(screen.queryByText('Sign in to dubbing.io')).not.toBeInTheDocument();
   });
 
-  it('renders sign in form when isOpen is true and submits successfully', () => {
+  it('renders sign in form when isOpen is true and submits successfully', async () => {
     const handleClose = vi.fn();
     const handleSuccess = vi.fn();
+
+    vi.spyOn(api.auth, 'signin').mockResolvedValue({
+      token: 'test_token',
+      user: {
+        id: 'usr_123',
+        email: 'user@dubbing.io',
+        name: 'User',
+        provider: 'email',
+        avatarUrl: '',
+        createdAt: new Date().toISOString(),
+      },
+    });
 
     render(
       <AuthModal
@@ -41,7 +54,9 @@ describe('AuthModal Component', () => {
     const submitBtn = screen.getByRole('button', { name: /^continue →/i });
     fireEvent.click(submitBtn);
 
-    expect(handleSuccess).toHaveBeenCalledWith('user@dubbing.io');
-    expect(handleClose).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(handleSuccess).toHaveBeenCalledWith('user@dubbing.io');
+      expect(handleClose).toHaveBeenCalled();
+    });
   });
 });

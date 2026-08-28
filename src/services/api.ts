@@ -63,6 +63,7 @@ class ApiClient {
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
+      credentials: 'include',
       headers,
     });
 
@@ -102,23 +103,14 @@ class ApiClient {
       return data;
     },
 
-    oauth: async (payload: { email: string; name?: string; provider: string; avatarUrl?: string }): Promise<AuthResponse> => {
-      const data = await this.request<AuthResponse>('/auth/oauth', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (data.token) {
-        this.setToken(data.token);
-        localStorage.setItem(USER_STORAGE_KEY, data.user.email);
-      }
-      return data;
-    },
-
     me: async (): Promise<{ user: UserProfile }> => {
       return this.request<{ user: UserProfile }>('/auth/me');
     },
 
-    logout: () => {
+    logout: async (): Promise<void> => {
+      try {
+        await this.request('/auth/signout', { method: 'POST' });
+      } catch (_) {}
       this.removeToken();
     },
   };

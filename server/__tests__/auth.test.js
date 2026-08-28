@@ -84,4 +84,14 @@ describe('Auth API Routes (/api/auth)', () => {
     const res = await request(app).get('/api/auth/me');
     expect(res.status).toBe(401);
   });
+
+  it('POST /api/auth/signout - removes authentication cookie and logs out', async () => {
+    const res = await request(app).post('/api/auth/signout');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('message');
+    // Cookie is cleared
+    const cookies = res.headers['set-cookie'] || [];
+    const cleared = cookies.some((c) => c.includes('dubbing_session=;') || c.includes('Max-Age=0') || c.includes('Expires=Thu, 01 Jan 1970'));
+    expect(cleared).toBe(true);
+  });
 });

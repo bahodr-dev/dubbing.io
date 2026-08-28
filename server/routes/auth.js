@@ -1,31 +1,15 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
-import { db } from '../db.js';
-import { authenticateToken, JWT_SECRET } from '../middleware/auth.js';
+import { authenticateToken } from '../middleware/auth.js';
+import * as userRepository from '../repositories/userRepository.js';
+import { generateToken, setAuthCookie, clearAuthCookie } from '../services/auth/sessionService.js';
+import { startOAuth, handleOAuthCallback } from '../services/auth/oauthService.js';
 
 export const authRouter = Router();
 
-// Helper to create JWT token
-function generateToken(user) {
-  return jwt.sign(
-    { id: user.id, email: user.email, name: user.name },
-    JWT_SECRET,
-    { expiresIn: '30d' }
-  );
-}
-
-// Format user output (strip password_hash)
-function formatUser(user) {
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name || user.email.split('@')[0],
-    provider: user.provider || 'email',
-    avatarUrl: user.avatar_url || '',
-    createdAt: user.created_at,
-  };
+// Helper to get frontend App URL
+function getAppUrl() {
+  return process.env.APP_URL || 'http://localhost:5173';
 }
 
 // 1. SIGN UP (Email + Password)
@@ -38,34 +22,38 @@ authRouter.post('/signup', async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
     if (password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters.' });
     }
 
-    // Check if user already exists
-    const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(cleanEmail);
+    // Check duplicate account
+    const existing = userRepository.findByEmail(cleanEmail);
     if (existing) {
       return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' });
     }
 
-    // Hash password
+    // Securely hash password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    const userId = randomUUID();
-    const displayName = name || cleanEmail.split('@')[0];
+    const newUser = userRepository.createUser({
+      email: cleanEmail,
+      name: name ? name.trim() : null,
+      passwordHash,
+      provider: 'email',
+    });
 
-    db.prepare(`
-      INSERT INTO users (id, email, name, password_hash, provider)
-      VALUES (?, ?, ?, ?, 'email')
-    `).run(userId, cleanEmail, displayName, passwordHash);
-
-    const newUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     const token = generateToken(newUser);
+    setAuthCookie(res, token);
 
     return res.status(201).json({
       token,
-      user: formatUser(newUser),
+      user: userRepository.formatUser(newUser),
       message: 'Account created successfully!',
     });
   } catch (err) {
@@ -84,26 +72,29 @@ authRouter.post('/signin', async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(cleanEmail);
+    const user = userRepository.findByEmail(cleanEmail);
 
     if (!user) {
-      return res.status(401).json({ error: 'No account found with this email. Please check your email or sign up.' });
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     if (!user.password_hash) {
-      return res.status(400).json({ error: `This account was registered using ${user.provider}. Please use ${user.provider} to log in.` });
+      return res.status(400).json({
+        error: `This account was registered using ${user.provider}. Please sign in with ${user.provider}.`,
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      return res.status(401).json({ error: 'Incorrect password. Please try again or reset your password.' });
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     const token = generateToken(user);
+    setAuthCookie(res, token);
 
     return res.json({
       token,
-      user: formatUser(user),
+      user: userRepository.formatUser(user),
       message: 'Logged in successfully!',
     });
   } catch (err) {
@@ -112,55 +103,89 @@ authRouter.post('/signin', async (req, res) => {
   }
 });
 
-// 3. OAUTH (Google, GitHub, SSO)
-authRouter.post('/oauth', async (req, res) => {
-  try {
-    const { email, name, provider, avatarUrl } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required for OAuth login.' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(cleanEmail);
-
-    if (!user) {
-      const userId = randomUUID();
-      const displayName = name || cleanEmail.split('@')[0];
-      const authProvider = provider || 'oauth';
-
-      db.prepare(`
-        INSERT INTO users (id, email, name, provider, avatar_url)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(userId, cleanEmail, displayName, authProvider, avatarUrl || '');
-
-      user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-    }
-
-    const token = generateToken(user);
-
-    return res.json({
-      token,
-      user: formatUser(user),
-      message: `Signed in with ${provider || 'OAuth'} successfully!`,
-    });
-  } catch (err) {
-    console.error('Error in /oauth:', err);
-    return res.status(500).json({ error: 'Internal server error during OAuth login.' });
-  }
-});
-
-// 4. GET CURRENT AUTHENTICATED USER
+// 3. GET CURRENT AUTHENTICATED USER
 authRouter.get('/me', authenticateToken, (req, res) => {
   try {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    const user = userRepository.findById(req.user.id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found.' });
+      return res.status(404).json({ error: 'User account not found.' });
     }
 
-    return res.json({ user: formatUser(user) });
+    return res.json({ user: userRepository.formatUser(user) });
   } catch (err) {
     console.error('Error in /me:', err);
     return res.status(500).json({ error: 'Internal server error.' });
   }
+});
+
+// 4. SIGN OUT
+authRouter.post(['/signout', '/logout'], (_req, res) => {
+  clearAuthCookie(res);
+  return res.json({ message: 'Logged out successfully.' });
+});
+
+// 5. OAUTH START (Google, GitHub, Microsoft)
+const handleOAuthRedirect = (req, res) => {
+  const { provider } = req.params;
+  const redirectUrl = req.query.redirect_url || '/dashboard';
+  try {
+    const { authUrl } = startOAuth(provider, { redirectUrl });
+    return res.redirect(authUrl);
+  } catch (err) {
+    console.error(`Error starting ${provider} OAuth:`, err);
+    const appUrl = getAppUrl();
+    return res.redirect(`${appUrl}/signup?error=${encodeURIComponent(err.message)}`);
+  }
+};
+
+authRouter.get('/google', (req, res) => {
+  req.params.provider = 'google';
+  return handleOAuthRedirect(req, res);
+});
+authRouter.get('/github', (req, res) => {
+  req.params.provider = 'github';
+  return handleOAuthRedirect(req, res);
+});
+authRouter.get('/microsoft', (req, res) => {
+  req.params.provider = 'microsoft';
+  return handleOAuthRedirect(req, res);
+});
+
+// 6. OAUTH CALLBACK (Google, GitHub, Microsoft)
+const handleOAuthCallbackRoute = async (req, res) => {
+  const appUrl = getAppUrl();
+  const { provider } = req.params;
+  const { code, state, error, error_description } = req.query;
+
+  if (error) {
+    console.warn(`OAuth error from ${provider}:`, error, error_description);
+    return res.redirect(`${appUrl}/signup?error=${encodeURIComponent(error_description || error || 'OAuth authorization failed.')}`);
+  }
+
+  try {
+    const result = await handleOAuthCallback(provider, { code, state });
+
+    // Set secure HTTP-only session cookie
+    setAuthCookie(res, result.token);
+
+    // Redirect to frontend dashboard with token parameter for fallback sync
+    const destination = result.redirectUrl && result.redirectUrl.startsWith('/') ? result.redirectUrl : '/dashboard';
+    return res.redirect(`${appUrl}${destination}?token=${encodeURIComponent(result.token)}`);
+  } catch (err) {
+    console.error(`OAuth callback error for ${provider}:`, err);
+    return res.redirect(`${appUrl}/signup?error=${encodeURIComponent(err.message || 'OAuth authentication failed.')}`);
+  }
+};
+
+authRouter.get('/google/callback', (req, res) => {
+  req.params.provider = 'google';
+  return handleOAuthCallbackRoute(req, res);
+});
+authRouter.get('/github/callback', (req, res) => {
+  req.params.provider = 'github';
+  return handleOAuthCallbackRoute(req, res);
+});
+authRouter.get('/microsoft/callback', (req, res) => {
+  req.params.provider = 'microsoft';
+  return handleOAuthCallbackRoute(req, res);
 });
