@@ -273,7 +273,10 @@ export function initDatabase() {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL
-      )
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_media_assets_user_id ON media_assets (user_id);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_project_id ON media_assets (project_id);
     `);
 
   // Seed default neural voices if table is empty

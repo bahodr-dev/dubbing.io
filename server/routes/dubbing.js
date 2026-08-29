@@ -79,17 +79,20 @@ dubbingRouter.post('/process', (req, res) => {
     }
 
     let fullFilePath = null;
+    let validatedMediaId = null;
     if (mediaId || mediaPath) {
       const mediaResult = resolveUserMediaFile(req, mediaId, mediaPath);
       if (mediaResult.error) {
         return res.status(404).json({ error: mediaResult.error });
       }
       fullFilePath = mediaResult.filePath;
+      validatedMediaId = mediaResult.media ? mediaResult.media.id : null;
     }
 
     const job = JobManager.createJob({
       userId: req.user.id,
       projectId,
+      mediaId: validatedMediaId,
       filePath: fullFilePath,
       originalLanguage,
       targetLanguage,

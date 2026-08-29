@@ -126,6 +126,7 @@ class ApiClient {
   public dubbing = {
     process: async (payload: {
       projectId?: string;
+      mediaId?: string;
       mediaPath?: string;
       originalLanguage?: string;
       targetLanguage?: string;
@@ -142,7 +143,12 @@ class ApiClient {
       return this.request<{ job: any }>(`/dubbing/jobs/${jobId}`);
     },
 
-    transcribe: async (payload: { mediaPath?: string; duration?: number; language?: string }): Promise<{ segments: TranscriptSegment[]; segmentCount: number }> => {
+    transcribe: async (payload: {
+      mediaId?: string;
+      mediaPath?: string;
+      duration?: number;
+      language?: string;
+    }): Promise<{ segments: TranscriptSegment[]; segmentCount: number }> => {
       return this.request<{ segments: TranscriptSegment[]; segmentCount: number }>('/dubbing/transcribe', {
         method: 'POST',
         body: JSON.stringify(payload),

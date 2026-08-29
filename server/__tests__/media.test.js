@@ -232,7 +232,61 @@ describe('Private Media Storage & User Ownership (/api/media)', () => {
     expect(fs.existsSync(diskPath)).toBe(true);
   });
 
-  it('18. Owner (User A) can delete own media (returns 200, removes DB record and file)', async () => {
+  it('19. Dubbing pipeline POST /api/dubbing/transcribe rejects transcribing another user media', async () => {
+    const res = await request(app)
+      .post('/api/dubbing/transcribe')
+      .set('Cookie', userBCookie)
+      .send({
+        mediaId: userAMediaId,
+      });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/media not found or unauthorized/i);
+  });
+
+  it('20. Path traversal in transcribe or media endpoints with ../ or invalid paths is blocked', async () => {
+    const res1 = await request(app)
+      .post('/api/dubbing/transcribe')
+      .set('Cookie', userACookie)
+      .send({
+        mediaPath: '../../../../etc/passwd',
+      });
+    expect(res1.status).toBe(404);
+
+    const res2 = await request(app)
+      .get('/api/media/..%2F..%2Fsecret.txt')
+      .set('Cookie', userACookie);
+    expect(res2.status).toBe(404);
+  });
+
+  it('21. Nonexistent or deleted physical file returns safe 404 without exposing filesystem paths', async () => {
+    // Create DB entry pointing to non-existent file
+    const fakeId = `med-missing-${Date.now()}`;
+    db.prepare(`
+      INSERT INTO media_assets (
+        id, user_id, original_filename, stored_filename, storage_path, mime_type, size_bytes
+      ) VALUES (?, ?, 'ghost.mp4', 'ghost_file_missing.mp4', '/tmp/ghost.mp4', 'video/mp4', 1000)
+    `).run(fakeId, userAId);
+
+    const res = await request(app)
+      .get(`/api/media/${fakeId}`)
+      .set('Cookie', userACookie);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Media file not found on disk.');
+    expect(JSON.stringify(res.body)).not.toContain('/tmp');
+    expect(JSON.stringify(res.body)).not.toContain('/run/media');
+
+    db.prepare('DELETE FROM media_assets WHERE id = ?').run(fakeId);
+  });
+
+  it('22. Indexes exist on media_assets (user_id) and (project_id)', () => {
+    const indexes = db.prepare(`PRAGMA index_list('media_assets')`).all().map(i => i.name);
+    expect(indexes).toContain('idx_media_assets_user_id');
+    expect(indexes).toContain('idx_media_assets_project_id');
+  });
+
+  it('23. Owner (User A) can delete own media (returns 200, removes DB record and file)', async () => {
     const diskPath = path.join(uploadsDir, userAMediaFilename);
     expect(fs.existsSync(diskPath)).toBe(true);
 

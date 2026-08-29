@@ -11,6 +11,7 @@ export class JobManager {
   static createJob({
     userId,
     projectId,
+    mediaId,
     filePath,
     originalLanguage = 'en',
     targetLanguage = 'uz',
@@ -22,6 +23,7 @@ export class JobManager {
       id,
       userId,
       projectId,
+      mediaId,
       status: 'pending',
       progress: 0,
       currentStage: 'Initializing AI Dubbing Pipeline...',
@@ -83,6 +85,7 @@ export class JobManager {
       const ttsResult = await synthesizeSpeech({
         text: fullSpokenText,
         voiceId: params.voiceId,
+        userId: job.userId,
       });
 
       // Stage 4: Completed
