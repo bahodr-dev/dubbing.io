@@ -121,12 +121,12 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
 
         {/* Primary Navigation Links */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '24px' }}>
-          {/* 1. Home / New Dubbing */}
+          {/* 1. Home */}
           <div className={!isSidebarOpen ? 'tooltip-trigger' : undefined}>
             <button
               type="button"
               onClick={() => onTabChange('home')}
-              title={!isSidebarOpen ? 'Start new dubbing' : undefined}
+              title={!isSidebarOpen ? 'Home' : undefined}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -149,9 +149,9 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                 strokeWidth={activeTab === 'home' ? 2 : 1.75}
                 color={activeTab === 'home' ? '#000000' : 'rgba(0, 0, 0, 0.6)'}
               />
-              {isSidebarOpen && <span>Start new dubbing</span>}
+              {isSidebarOpen && <span>Home</span>}
             </button>
-            {!isSidebarOpen && <div className="tooltip-content">Start new dubbing</div>}
+            {!isSidebarOpen && <div className="tooltip-content">Home</div>}
           </div>
 
           {/* 2. Recent Projects */}
