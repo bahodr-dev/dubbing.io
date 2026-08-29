@@ -553,15 +553,31 @@ h6 {
   }
 }
 
-@keyframes toastSlideDown {
-  from {
+@keyframes toastSlideInTop {
+  0% {
     opacity: 0;
-    transform: translateY(-16px) scale(0.96);
+    transform: translateY(-32px) scale(0.92);
   }
 
-  to {
+  70% {
+    transform: translateY(3px) scale(1.01);
+  }
+
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toastSlideOutTop {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-28px) scale(0.92);
   }
 }
 

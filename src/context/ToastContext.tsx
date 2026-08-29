@@ -19,18 +19,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const showToast = useCallback(
-    (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    (message: string, type: 'success' | 'error' | 'info' = 'info', duration = 3600) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const newToast: ToastMessage = { id, message, type };
+      const newToast: ToastMessage = { id, message, type, duration };
 
       setToasts((prev) => [...prev, newToast]);
-
-      // Auto dismiss after 4 seconds
-      setTimeout(() => {
-        dismissToast(id);
-      }, 4000);
     },
-    [dismissToast]
+    []
   );
 
   const showSuccess = useCallback((message: string) => showToast(message, 'success'), [showToast]);
