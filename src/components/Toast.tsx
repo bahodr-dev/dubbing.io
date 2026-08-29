@@ -19,14 +19,16 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
     <div
       style={{
         position: 'fixed',
-        bottom: '24px',
-        right: '24px',
+        top: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
         zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',
+        alignItems: 'center',
         gap: '10px',
-        maxWidth: '400px',
-        width: '100%',
+        maxWidth: '440px',
+        width: 'calc(100% - 32px)',
         pointerEvents: 'none',
       }}
     >
@@ -35,6 +37,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
           key={toast.id}
           style={{
             pointerEvents: 'auto',
+            width: '100%',
             backgroundColor: '#000000',
             color: '#FFFFFF',
             border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -46,7 +49,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
             justifyContent: 'space-between',
             gap: '12px',
             fontSize: '13px',
-            animation: 'fadeIn 180ms ease, slideUp 180ms ease',
+            animation: 'fadeIn 180ms ease, toastSlideDown 200ms cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
