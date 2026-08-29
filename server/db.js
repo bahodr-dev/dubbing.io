@@ -237,24 +237,44 @@ export function initDatabase() {
     }
   } catch (_) {}
 
-  // Voices Table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS voices (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      name TEXT NOT NULL,
-      language TEXT NOT NULL,
-      language_code TEXT NOT NULL,
-      style TEXT DEFAULT 'Natural',
-      gender TEXT DEFAULT 'male',
-      tone TEXT,
-      preview_url TEXT,
-      tags_json TEXT,
-      recommended INTEGER DEFAULT 0,
-      is_custom INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+    // Voices Table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS voices (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        name TEXT NOT NULL,
+        language TEXT NOT NULL,
+        language_code TEXT NOT NULL,
+        style TEXT DEFAULT 'Natural',
+        gender TEXT DEFAULT 'male',
+        tone TEXT,
+        preview_url TEXT,
+        tags_json TEXT,
+        recommended INTEGER DEFAULT 0,
+        is_custom INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Private Media Assets Table (Enforces strict user ownership)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS media_assets (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT,
+        original_filename TEXT NOT NULL,
+        stored_filename TEXT NOT NULL,
+        storage_path TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        media_type TEXT DEFAULT 'video',
+        status TEXT DEFAULT 'ready',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL
+      )
+    `);
 
   // Seed default neural voices if table is empty
   const count = db.prepare('SELECT COUNT(*) as count FROM voices').get().count;

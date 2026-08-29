@@ -16,14 +16,13 @@ export const VOICE_PROVIDER_MAP = {
   'voice-amina': { elevenLabsId: 'ThT5KcBeYPX3keUQqHPh', openaiVoice: 'shimmer' },
 };
 
-/**
- * Synthesizes neural voice audio using ElevenLabs or OpenAI TTS API.
- * Saves output to uploads directory and returns audioUrl.
- */
+import { createMediaAsset } from '../../repositories/mediaRepository.js';
+
 export async function synthesizeSpeech({
   text,
   voiceId = 'voice-farrux',
   speed = 1.0,
+  userId = null,
 } = {}) {
   const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -31,6 +30,23 @@ export async function synthesizeSpeech({
 
   const outFileName = `tts-${Date.now()}-${randomUUID().slice(0, 8)}.mp3`;
   const outFilePath = path.join(uploadsDir, outFileName);
+
+  const registerMediaUrl = (bufferLength) => {
+    if (userId) {
+      const asset = createMediaAsset({
+        userId,
+        originalFilename: `tts-${Date.now()}.mp3`,
+        storedFilename: outFileName,
+        storagePath: outFilePath,
+        mimeType: 'audio/mpeg',
+        sizeBytes: bufferLength,
+        mediaType: 'audio',
+        status: 'ready',
+      });
+      return `/api/media/${asset.id}`;
+    }
+    return '';
+  };
 
   // 1. ElevenLabs TTS API
   if (elevenLabsKey && mapping.elevenLabsId && text) {
@@ -55,9 +71,11 @@ export async function synthesizeSpeech({
 
       if (response.ok) {
         const buffer = await response.arrayBuffer();
-        fs.writeFileSync(outFilePath, Buffer.from(buffer));
+        const buf = Buffer.from(buffer);
+        fs.writeFileSync(outFilePath, buf);
+        const audioUrl = registerMediaUrl(buf.length);
         return {
-          audioUrl: `/uploads/${outFileName}`,
+          audioUrl,
           durationEstimate: Math.max(2, text.split(' ').length * 0.4),
           provider: 'ElevenLabs Neural Multilingual v2',
         };
@@ -86,9 +104,11 @@ export async function synthesizeSpeech({
 
       if (response.ok) {
         const buffer = await response.arrayBuffer();
-        fs.writeFileSync(outFilePath, Buffer.from(buffer));
+        const buf = Buffer.from(buffer);
+        fs.writeFileSync(outFilePath, buf);
+        const audioUrl = registerMediaUrl(buf.length);
         return {
-          audioUrl: `/uploads/${outFileName}`,
+          audioUrl,
           durationEstimate: Math.max(2, text.split(' ').length * 0.4),
           provider: 'OpenAI TTS HD',
         };

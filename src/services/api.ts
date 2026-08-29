@@ -15,11 +15,15 @@ export interface AuthResponse {
 }
 
 export interface UploadResponse {
+  id: string;
+  mediaId?: string;
   url: string;
   filename: string;
   originalName: string;
   size: string;
+  sizeBytes?: number;
   mimeType: string;
+  mediaType?: string;
   message?: string;
 }
 
@@ -84,9 +88,12 @@ class ApiClient {
 
   // 2. MEDIA UPLOADS
   public media = {
-    upload: async (file: File): Promise<UploadResponse> => {
+    upload: async (file: File, projectId?: string): Promise<UploadResponse> => {
       const formData = new FormData();
       formData.append('file', file);
+      if (projectId) {
+        formData.append('projectId', projectId);
+      }
 
       const response = await fetch(`${this.baseUrl}/media/upload`, {
         method: 'POST',
@@ -99,6 +106,12 @@ class ApiClient {
         throw new Error(data.error || 'Failed to upload media file.');
       }
       return data as UploadResponse;
+    },
+
+    delete: async (id: string): Promise<{ message: string }> => {
+      return this.request<{ message: string }>(`/media/${id}`, {
+        method: 'DELETE',
+      });
     },
 
     extractUrl: async (url: string): Promise<{ url: string; title: string; thumbnailUrl: string; duration: number }> => {

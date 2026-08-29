@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
-import { initDatabase, uploadsDir } from './db.js';
+import { initDatabase } from './db.js';
 import { authRouter } from './routes/auth.js';
 import { projectsRouter } from './routes/projects.js';
 import { mediaRouter } from './routes/media.js';
@@ -44,9 +44,6 @@ app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 if (process.env.NODE_ENV !== 'test') {
   app.use('/api', apiLimiter);
 }
-
-// Serve Uploaded Media Files Statically
-app.use('/uploads', express.static(uploadsDir));
 
 // Request logging in development
 if (process.env.NODE_ENV !== 'test') {

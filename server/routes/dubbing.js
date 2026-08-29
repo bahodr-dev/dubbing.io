@@ -1,22 +1,68 @@
 import { Router } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { db, uploadsDir } from '../db.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { transcribeAudio } from '../services/ai/transcription.js';
 import { translateSegments, translateText } from '../services/ai/translation.js';
 import { synthesizeSpeech } from '../services/ai/tts.js';
 import { JobManager } from '../services/jobQueue.js';
+import * as mediaRepository from '../repositories/mediaRepository.js';
 
 export const dubbingRouter = Router();
 
 // Apply auth middleware to all dubbing routes
 dubbingRouter.use(authenticateToken);
 
-// 1. ASYNCHRONOUS FULL DUBBING PIPELINE (Job Queue)
+/**
+ * Helper to resolve media file path strictly for the authenticated user
+ */
+function resolveUserMediaFile(req, mediaId, mediaPath) {
+  if (!mediaId && !mediaPath) return null;
+
+  let targetId = mediaId;
+  let targetFilename = null;
+
+  if (!targetId && mediaPath) {
+    if (typeof mediaPath === 'string' && mediaPath.startsWith('/api/media/')) {
+      targetId = mediaPath.replace('/api/media/', '').split('/')[0];
+    } else {
+      targetFilename = path.basename(mediaPath);
+    }
+  }
+
+  let media = null;
+  if (targetId) {
+    media = mediaRepository.findByIdAndUser(targetId, req.user.id);
+  }
+  if (!media && targetFilename) {
+    media = mediaRepository.findByStoredFilenameAndUser(targetFilename, req.user.id);
+  }
+
+  if (!media) {
+    return { error: 'Media not found or unauthorized.' };
+  }
+
+  const storageRoot = path.resolve(uploadsDir);
+  const safeFilePath = path.resolve(storageRoot, media.stored_filename);
+
+  if (!safeFilePath.startsWith(storageRoot + path.sep) && safeFilePath !== storageRoot) {
+    return { error: 'Access denied.' };
+  }
+
+  if (!fs.existsSync(safeFilePath)) {
+    return { error: 'Media file not found on disk.' };
+  }
+
+  return { media, filePath: safeFilePath };
+}
+
+// 1. ASYNCHRONOUS FULL DUBBING PIPELINE (Job Queue with Ownership Validation)
 dubbingRouter.post('/process', (req, res) => {
   try {
     const {
       projectId,
+      mediaId,
       mediaPath,
       originalLanguage = 'en',
       targetLanguage = 'uz',
@@ -24,10 +70,21 @@ dubbingRouter.post('/process', (req, res) => {
       duration = 30,
     } = req.body;
 
-    let fullFilePath;
-    if (mediaPath) {
-      const cleanName = path.basename(mediaPath);
-      fullFilePath = path.join(uploadsDir, cleanName);
+    // Verify project ownership if projectId provided
+    if (projectId) {
+      const project = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(projectId, req.user.id);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found or unauthorized.' });
+      }
+    }
+
+    let fullFilePath = null;
+    if (mediaId || mediaPath) {
+      const mediaResult = resolveUserMediaFile(req, mediaId, mediaPath);
+      if (mediaResult.error) {
+        return res.status(404).json({ error: mediaResult.error });
+      }
+      fullFilePath = mediaResult.filePath;
     }
 
     const job = JobManager.createJob({
@@ -51,7 +108,7 @@ dubbingRouter.post('/process', (req, res) => {
   }
 });
 
-// 2. POLL JOB STATUS
+// 2. POLL JOB STATUS (Owner-isolated)
 dubbingRouter.get('/jobs/:jobId', (req, res) => {
   try {
     const { jobId } = req.params;
@@ -68,14 +125,18 @@ dubbingRouter.get('/jobs/:jobId', (req, res) => {
   }
 });
 
-// 3. TRANSCRIBE (ASR)
+// 3. TRANSCRIBE (ASR with Media Ownership Check)
 dubbingRouter.post('/transcribe', async (req, res) => {
   try {
-    const { mediaPath, duration = 30, language = 'en' } = req.body;
-    let fullFilePath;
-    if (mediaPath) {
-      const cleanName = path.basename(mediaPath);
-      fullFilePath = path.join(uploadsDir, cleanName);
+    const { mediaId, mediaPath, duration = 30, language = 'en' } = req.body;
+
+    let fullFilePath = null;
+    if (mediaId || mediaPath) {
+      const mediaResult = resolveUserMediaFile(req, mediaId, mediaPath);
+      if (mediaResult.error) {
+        return res.status(404).json({ error: mediaResult.error });
+      }
+      fullFilePath = mediaResult.filePath;
     }
 
     const segments = await transcribeAudio({
@@ -125,7 +186,7 @@ dubbingRouter.post('/translate', async (req, res) => {
   }
 });
 
-// 5. TTS SYNTHESIS
+// 5. TTS SYNTHESIS (Private Media Storage)
 dubbingRouter.post('/synthesize', async (req, res) => {
   try {
     const { text, voiceId = 'voice-farrux', speed = 1.0 } = req.body;
@@ -138,6 +199,7 @@ dubbingRouter.post('/synthesize', async (req, res) => {
       text,
       voiceId,
       speed,
+      userId: req.user.id,
     });
 
     return res.json({

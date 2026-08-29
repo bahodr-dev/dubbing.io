@@ -7,7 +7,6 @@ import * as userRepository from '../repositories/userRepository.js';
 import * as oauthAccountRepository from '../repositories/oauthAccountRepository.js';
 import * as googleProvider from '../services/auth/providers/google.js';
 import * as githubProvider from '../services/auth/providers/github.js';
-import * as microsoftProvider from '../services/auth/providers/microsoft.js';
 
 describe('OAuth Authentication & Security Tests (/api/auth)', () => {
   beforeEach(() => {

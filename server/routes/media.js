@@ -1,11 +1,15 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { randomUUID } from 'crypto';
-import { uploadsDir } from '../db.js';
+import { uploadsDir, db } from '../db.js';
 import { authenticateToken } from '../middleware/auth.js';
+import * as mediaRepository from '../repositories/mediaRepository.js';
 
 export const mediaRouter = Router();
+
+const MAX_UPLOAD_SIZE_BYTES = parseInt(process.env.MAX_UPLOAD_SIZE_BYTES || '', 10) || 250 * 1024 * 1024; // 250 MB default
 
 const ALLOWED_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.mkv', '.mp3', '.wav', '.aac', '.ogg', '.m4a']);
 const ALLOWED_MIMES = new Set([
@@ -39,25 +43,65 @@ const fileFilter = (_req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB limit
+  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
 });
 
-// 1. UPLOAD MEDIA FILE (Authenticated)
-mediaRouter.post('/upload', authenticateToken, upload.single('file'), (req, res) => {
+// Helper for multer error handling wrapper
+function uploadSingleFile(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          error: `File size exceeds the limit of ${(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)).toFixed(0)} MB.`,
+        });
+      }
+      return res.status(400).json({ error: err.message || 'File upload error.' });
+    }
+    next();
+  });
+}
+
+// 1. UPLOAD MEDIA FILE (Authenticated & Owned)
+mediaRouter.post('/upload', authenticateToken, uploadSingleFile, (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No media file provided.' });
     }
 
-    const fileUrl = `/uploads/${req.file.filename}`;
-    const fileSizeMb = (req.file.size / (1024 * 1024)).toFixed(1) + ' MB';
+    const { projectId } = req.body;
+    let validatedProjectId = null;
+
+    // If projectId provided, verify user ownership of the project
+    if (projectId) {
+      const project = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(projectId, req.user.id);
+      if (!project) {
+        // Clean up uploaded file if project ownership check fails
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+        return res.status(404).json({ error: 'Project not found or unauthorized.' });
+      }
+      validatedProjectId = project.id;
+    }
+
+    const mediaType = req.file.mimetype.startsWith('audio/') ? 'audio' : 'video';
+
+    // Insert database ownership record
+    const asset = mediaRepository.createMediaAsset({
+      userId: req.user.id,
+      projectId: validatedProjectId,
+      originalFilename: req.file.originalname,
+      storedFilename: req.file.filename,
+      storagePath: req.file.path,
+      mimeType: req.file.mimetype,
+      sizeBytes: req.file.size,
+      mediaType,
+      status: 'ready',
+    });
+
+    const formatted = mediaRepository.formatMedia(asset);
 
     return res.status(201).json({
-      url: fileUrl,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: fileSizeMb,
-      mimeType: req.file.mimetype,
+      ...formatted,
+      filename: req.file.filename, // For backwards compatibility
       message: 'Media uploaded successfully!',
     });
   } catch (err) {
@@ -66,7 +110,131 @@ mediaRouter.post('/upload', authenticateToken, upload.single('file'), (req, res)
   }
 });
 
-// 2. PARSE VIDEO URL (Authenticated with oEmbed metadata resolver)
+// 2. GET / STREAM PRIVATE MEDIA (Authenticated, Range Support, Ownership-Enforced)
+mediaRouter.get('/:id', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+    const media = mediaRepository.findByIdAndUser(id, req.user.id);
+
+    if (!media) {
+      return res.status(404).json({ error: 'Media not found.' });
+    }
+
+    // Path traversal check
+    const storageRoot = path.resolve(uploadsDir);
+    const safeFilePath = path.resolve(storageRoot, media.stored_filename);
+    if (!safeFilePath.startsWith(storageRoot + path.sep) && safeFilePath !== storageRoot) {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    if (!fs.existsSync(safeFilePath)) {
+      return res.status(404).json({ error: 'Media file not found on disk.' });
+    }
+
+    const stat = fs.statSync(safeFilePath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (isNaN(start) || start >= fileSize || (parts[1] && end < start)) {
+        res.setHeader('Content-Range', `bytes */${fileSize}`);
+        return res.status(416).json({ error: 'Requested range not satisfiable' });
+      }
+
+      const chunkSize = end - start + 1;
+      const fileStream = fs.createReadStream(safeFilePath, { start, end });
+
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': media.mime_type || 'application/octet-stream',
+      });
+      fileStream.pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': media.mime_type || 'application/octet-stream',
+        'Accept-Ranges': 'bytes',
+      });
+      fs.createReadStream(safeFilePath).pipe(res);
+    }
+  } catch (err) {
+    console.error('Error streaming media:', err);
+    return res.status(500).json({ error: 'Failed to stream media file.' });
+  }
+});
+
+// 3. DOWNLOAD PRIVATE MEDIA (Authenticated with sanitized Content-Disposition)
+mediaRouter.get('/:id/download', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+    const media = mediaRepository.findByIdAndUser(id, req.user.id);
+
+    if (!media) {
+      return res.status(404).json({ error: 'Media not found.' });
+    }
+
+    const storageRoot = path.resolve(uploadsDir);
+    const safeFilePath = path.resolve(storageRoot, media.stored_filename);
+    if (!safeFilePath.startsWith(storageRoot + path.sep) && safeFilePath !== storageRoot) {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    if (!fs.existsSync(safeFilePath)) {
+      return res.status(404).json({ error: 'Media file not found on disk.' });
+    }
+
+    const sanitizedFilename = (media.original_filename || 'download').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const stat = fs.statSync(safeFilePath);
+
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type': media.mime_type || 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${sanitizedFilename}"`,
+    });
+
+    fs.createReadStream(safeFilePath).pipe(res);
+  } catch (err) {
+    console.error('Error downloading media:', err);
+    return res.status(500).json({ error: 'Failed to download media file.' });
+  }
+});
+
+// 4. DELETE PRIVATE MEDIA (Authenticated & Owner Only)
+mediaRouter.delete('/:id', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+    const media = mediaRepository.findByIdAndUser(id, req.user.id);
+
+    if (!media) {
+      return res.status(404).json({ error: 'Media not found.' });
+    }
+
+    // 1. Delete database record
+    mediaRepository.deleteMediaAsset(id, req.user.id);
+
+    // 2. Delete physical file from filesystem safely
+    const storageRoot = path.resolve(uploadsDir);
+    const safeFilePath = path.resolve(storageRoot, media.stored_filename);
+    if (safeFilePath.startsWith(storageRoot + path.sep) && fs.existsSync(safeFilePath)) {
+      try {
+        fs.unlinkSync(safeFilePath);
+      } catch (_) {}
+    }
+
+    return res.json({ message: 'Media deleted successfully.' });
+  } catch (err) {
+    console.error('Error deleting media:', err);
+    return res.status(500).json({ error: 'Failed to delete media file.' });
+  }
+});
+
+// 5. PARSE VIDEO URL (Authenticated with oEmbed metadata resolver)
 mediaRouter.post('/extract-url', authenticateToken, async (req, res) => {
   try {
     const { url } = req.body;
