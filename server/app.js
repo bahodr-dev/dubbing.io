@@ -31,7 +31,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(null, true); // permissive for same-site dev/subdomains
+      callback(new Error('CORS blocked: Origin not allowed.'));
     }
   },
   credentials: true,

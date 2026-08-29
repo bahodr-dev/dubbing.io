@@ -10,7 +10,6 @@ export interface UserProfile {
 }
 
 export interface AuthResponse {
-  token: string;
   user: UserProfile;
   message?: string;
 }
@@ -31,35 +30,14 @@ export interface GenerateDubbingResponse {
   message?: string;
 }
 
-const TOKEN_STORAGE_KEY = 'dubbing_io_token';
-const USER_STORAGE_KEY = 'dubbing_io_user';
-
 class ApiClient {
   private baseUrl = '/api';
 
-  public getToken(): string | null {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
-  }
-
-  public setToken(token: string) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  }
-
-  public removeToken() {
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    localStorage.removeItem(USER_STORAGE_KEY);
-  }
-
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const token = this.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
     };
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
@@ -80,27 +58,17 @@ class ApiClient {
   // 1. AUTHENTICATION
   public auth = {
     signup: async (email: string, password: string, name?: string): Promise<AuthResponse> => {
-      const data = await this.request<AuthResponse>('/auth/signup', {
+      return this.request<AuthResponse>('/auth/signup', {
         method: 'POST',
         body: JSON.stringify({ email, password, name }),
       });
-      if (data.token) {
-        this.setToken(data.token);
-        localStorage.setItem(USER_STORAGE_KEY, data.user.email);
-      }
-      return data;
     },
 
     signin: async (email: string, password: string): Promise<AuthResponse> => {
-      const data = await this.request<AuthResponse>('/auth/signin', {
+      return this.request<AuthResponse>('/auth/signin', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      if (data.token) {
-        this.setToken(data.token);
-        localStorage.setItem(USER_STORAGE_KEY, data.user.email);
-      }
-      return data;
     },
 
     me: async (): Promise<{ user: UserProfile }> => {
@@ -111,25 +79,18 @@ class ApiClient {
       try {
         await this.request('/auth/signout', { method: 'POST' });
       } catch (_) {}
-      this.removeToken();
     },
   };
 
   // 2. MEDIA UPLOADS
   public media = {
     upload: async (file: File): Promise<UploadResponse> => {
-      const token = this.getToken();
       const formData = new FormData();
       formData.append('file', file);
 
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const response = await fetch(`${this.baseUrl}/media/upload`, {
         method: 'POST',
-        headers,
+        credentials: 'include',
         body: formData,
       });
 
@@ -207,14 +168,8 @@ class ApiClient {
     },
 
     downloadSubtitles: async (projectId: string, format: 'srt' | 'vtt' | 'json', filename?: string): Promise<void> => {
-      const token = this.getToken();
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const response = await fetch(`${this.baseUrl}/dubbing/export/${projectId}/${format}`, {
-        headers,
+        credentials: 'include',
       });
 
       if (!response.ok) {

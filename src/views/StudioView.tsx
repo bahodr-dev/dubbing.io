@@ -89,9 +89,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
     };
     setProject(updated);
     if (onUpdateProject) onUpdateProject(updated);
-    if (api.getToken()) {
-      api.projects.update(project.id, { voiceId: voice.id });
-    }
+    api.projects.update(project.id, { voiceId: voice.id }).catch(() => {});
     showSuccess(`Voice changed to ${voice.name}`);
   };
 
@@ -110,9 +108,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
     };
     setProject(updated);
     if (onUpdateProject) onUpdateProject(updated);
-    if (api.getToken()) {
-      api.projects.update(project.id, { [field]: value, voiceId: newVoiceId });
-    }
+    api.projects.update(project.id, { [field]: value, voiceId: newVoiceId }).catch(() => {});
   };
 
   const handleStartGeneration = () => {
@@ -124,9 +120,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
     };
     setProject(updated);
     if (onUpdateProject) onUpdateProject(updated);
-    if (api.getToken()) {
-      api.projects.update(project.id, { status: 'processing' });
-    }
+    api.projects.update(project.id, { status: 'processing' }).catch(() => {});
   };
 
   const handleProcessingComplete = () => {
@@ -139,9 +133,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
     };
     setProject(updated);
     if (onUpdateProject) onUpdateProject(updated);
-    if (api.getToken()) {
-      api.projects.update(project.id, { status: 'completed' });
-    }
+    api.projects.update(project.id, { status: 'completed' }).catch(() => {});
   };
 
   const handleUpdateSegment = (segmentId: string, originalText: string, translatedText: string) => {
@@ -157,11 +149,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
     if (onUpdateProject) onUpdateProject(updated);
 
     // Synchronize directly with backend SQLite database
-    if (api.getToken()) {
-      api.projects.updateTranscript(project.id, updatedTranscript).catch(err => {
-        console.warn('Could not sync transcript:', err);
-      });
-    }
+    api.projects.updateTranscript(project.id, updatedTranscript).catch(err => {
+      console.warn('Could not sync transcript:', err);
+    });
   };
 
   const handleDownload = async (format: 'video' | 'audio' | 'srt') => {
@@ -169,7 +159,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       try {
         await api.dubbing.downloadSubtitles(project.id, 'srt');
         showSuccess('Subtitles exported (.SRT)');
-      } catch (err) {
+      } catch (_) {
         // fallback to generating client-side SRT
         try {
           let srtContent = '';

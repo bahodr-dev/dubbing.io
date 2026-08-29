@@ -26,20 +26,29 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     const params = new URLSearchParams(window.location.search);
     const err = params.get('error');
     if (err) {
-      setError(decodeURIComponent(err));
+      const errorMap: Record<string, string> = {
+        oauth_failed: 'Authentication failed. Please try again.',
+        oauth_denied: 'Access was denied by the authentication provider.',
+        oauth_state_invalid: 'Session state expired or invalid. Please try again.',
+        oauth_expired: 'Authentication session expired. Please try again.',
+      };
+      setError(errorMap[err] || 'Authentication failed. Please try again.');
     }
 
-    const handleAuthMessage = (event: MessageEvent) => {
+    const handleAuthMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
       if (event.data && typeof event.data === 'object') {
         if (event.data.type === 'DUBBING_AUTH_SUCCESS') {
-          if (event.data.token) {
-            api.setToken(event.data.token);
-          }
-          if (event.data.user?.email) {
-            onSuccess(event.data.user.email);
+          try {
+            const meRes = await api.auth.me();
+            onSuccess(meRes.user.email);
+          } catch (err: unknown) {
+            const errorObj = err as Error;
+            setError(errorObj.message || 'Authentication failed.');
           }
         } else if (event.data.type === 'DUBBING_AUTH_ERROR') {
-          setError(event.data.error || 'Authentication failed.');
+          setError('Authentication failed. Please try again.');
         }
       }
     };

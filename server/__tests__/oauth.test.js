@@ -14,39 +14,63 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     vi.restoreAllMocks();
   });
 
-  it('11. Rejects invalid OAuth state on callback', async () => {
+  it('1. Rejects invalid OAuth state on callback', async () => {
     const res = await request(app)
       .get('/api/auth/google/callback?code=fake_code_123&state=tampered_invalid_state');
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/invalid|consumed/i);
+    expect(res.text).toMatch(/oauth_state_invalid/i);
+    expect(res.text).not.toContain('fake_code_123');
   });
 
-  it('12. Rejects missing OAuth state on callback', async () => {
+  it('2. Rejects missing OAuth state on callback', async () => {
     const res = await request(app)
       .get('/api/auth/github/callback?code=fake_code_123');
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/missing/i);
+    expect(res.text).toMatch(/oauth_state_invalid/i);
   });
 
-  it('13. Rejects expired OAuth state', async () => {
-    // Insert an expired state manually into DB
+  it('3. Rejects expired OAuth state', async () => {
     const expiredState = 'expired_state_test_xyz';
     db.prepare(`
       INSERT INTO oauth_states (state, provider, code_verifier, redirect_url, expires_at)
-      VALUES (?, 'microsoft', null, '/dashboard', ?)
+      VALUES (?, 'google', null, '/dashboard', ?)
     `).run(expiredState, Date.now() - 5000);
 
     const res = await request(app)
-      .get(`/api/auth/microsoft/callback?code=fake_code_123&state=${expiredState}`);
+      .get(`/api/auth/google/callback?code=fake_code_123&state=${expiredState}`);
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/expired/i);
+    expect(res.text).toMatch(/oauth_expired/i);
   });
 
-  it('14. Existing OAuth account logs into the correct existing user', async () => {
-    // Create existing user & linked oauth account
+  it('4. Atomically consumes OAuth state to prevent reuse / replay attacks', async () => {
+    const { state } = createOAuthState({ provider: 'google', redirectUrl: '/dashboard' });
+
+    vi.spyOn(googleProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
+      provider: 'google',
+      providerAccountId: `sub_single_use_${Date.now()}`,
+      email: `singleuse_${Date.now()}@dubbing.io`,
+      emailVerified: true,
+      name: 'Single Use User',
+      avatarUrl: '',
+    });
+
+    // First use: success
+    const firstRes = await request(app)
+      .get(`/api/auth/google/callback?code=code_1&state=${state}`);
+    expect(firstRes.status).toBe(200);
+    expect(firstRes.text).toContain('DUBBING_AUTH_SUCCESS');
+
+    // Second use with same state: must fail with invalid state error
+    const replayRes = await request(app)
+      .get(`/api/auth/google/callback?code=code_2&state=${state}`);
+    expect(replayRes.status).toBe(200);
+    expect(replayRes.text).toMatch(/oauth_state_invalid/i);
+  });
+
+  it('5. Existing OAuth account logs in with HttpOnly cookie and NO token in postMessage or URL', async () => {
     const existingUser = userRepository.createUser({
       email: `oauth_existing_${Date.now()}@dubbing.io`,
       name: 'Existing Google User',
@@ -61,7 +85,6 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
       providerEmail: existingUser.email,
     });
 
-    // Mock Google exchangeCodeAndGetProfile
     vi.spyOn(googleProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
       provider: 'google',
       providerAccountId: googleAccountId,
@@ -78,14 +101,27 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
-    
-    // Session cookie is set
+
+    // SECURITY CHECKS:
+    // 1. NO token in postMessage payload
+    expect(res.text).not.toContain('"token":');
+    expect(res.text).not.toContain('token:');
+    // 2. NO wildcard origin in postMessage
+    expect(res.text).not.toContain("'*'");
+    expect(res.text).not.toContain('"*"');
+    // 3. NO ?token= in URL redirect
+    expect(res.text).not.toContain('?token=');
+    expect(res.text).not.toContain('#token=');
+
+    // 4. Session cookie is set securely with HttpOnly
     const cookies = res.headers['set-cookie'] || [];
-    const hasSessionCookie = cookies.some((c) => c.includes('dubbing_session='));
-    expect(hasSessionCookie).toBe(true);
+    const sessionCookie = cookies.find((c) => c.includes('dubbing_session='));
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie).toMatch(/httponly/i);
+    expect(sessionCookie).toMatch(/samesite=lax/i);
   });
 
-  it('15. New OAuth account creates a new user and linked oauth_accounts record', async () => {
+  it('6. New OAuth account creates a new user and linked oauth_accounts record', async () => {
     const newGoogleEmail = `new_google_user_${Date.now()}@dubbing.io`;
     const newGoogleSub = `sub_${Date.now()}`;
 
@@ -106,19 +142,16 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
 
-    // Verify user was created in database
     const createdUser = userRepository.findByEmail(newGoogleEmail);
     expect(createdUser).toBeDefined();
     expect(createdUser.name).toBe('Brand New User');
 
-    // Verify linked oauth_account exists
     const linkedAccount = oauthAccountRepository.findByProviderAccount('google', newGoogleSub);
     expect(linkedAccount).toBeDefined();
     expect(linkedAccount.user_id).toBe(createdUser.id);
   });
 
-  it('16. Verified email matching links new OAuth provider to existing user with same email', async () => {
-    // 1. Existing user registered via email/password
+  it('7. Verified email matching links new GitHub OAuth provider to existing user', async () => {
     const sharedEmail = `shared_user_${Date.now()}@dubbing.io`;
     const existingPasswordUser = userRepository.createUser({
       email: sharedEmail,
@@ -128,7 +161,6 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
 
     const githubId = `gh_${Date.now()}`;
 
-    // 2. Mock GitHub returning the same verified email
     vi.spyOn(githubProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
       provider: 'github',
       providerAccountId: githubId,
@@ -146,14 +178,12 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
 
-    // Verify GitHub account was linked to existing user ID
     const linkedAccount = oauthAccountRepository.findByProviderAccount('github', githubId);
     expect(linkedAccount).toBeDefined();
     expect(linkedAccount.user_id).toBe(existingPasswordUser.id);
   });
 
-  it('17. Unverified email NEVER automatically links to an existing user account', async () => {
-    // 1. Existing victim account
+  it('8. Unverified email NEVER automatically links to an existing user account', async () => {
     const victimEmail = `victim_${Date.now()}@dubbing.io`;
     const victimUser = userRepository.createUser({
       email: victimEmail,
@@ -161,28 +191,61 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
       provider: 'email',
     });
 
-    const attackerMicrosoftId = `ms_${Date.now()}`;
+    const attackerGithubId = `gh_attacker_${Date.now()}`;
 
-    // 2. Mock Microsoft returning unverified email matching victim
-    vi.spyOn(microsoftProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
-      provider: 'microsoft',
-      providerAccountId: attackerMicrosoftId,
+    vi.spyOn(githubProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
+      provider: 'github',
+      providerAccountId: attackerGithubId,
       email: victimEmail,
       emailVerified: false, // UNVERIFIED!
       name: 'Attacker Impersonator',
       avatarUrl: null,
     });
 
-    const { state } = createOAuthState({ provider: 'microsoft', redirectUrl: '/dashboard' });
+    const { state } = createOAuthState({ provider: 'github', redirectUrl: '/dashboard' });
 
     const res = await request(app)
-      .get(`/api/auth/microsoft/callback?code=mock_ms_code&state=${state}`);
+      .get(`/api/auth/github/callback?code=mock_gh_code&state=${state}`);
 
     expect(res.status).toBe(200);
 
-    // Verify attacker was NOT linked to victim user ID!
-    const linkedAccount = oauthAccountRepository.findByProviderAccount('microsoft', attackerMicrosoftId);
+    const linkedAccount = oauthAccountRepository.findByProviderAccount('github', attackerGithubId);
     expect(linkedAccount).toBeDefined();
     expect(linkedAccount.user_id).not.toBe(victimUser.id);
+  });
+
+  it('9. Rejects open redirect attempts in OAuth flow', async () => {
+    const { state } = createOAuthState({
+      provider: 'google',
+      redirectUrl: 'https://evil.com/steal-session',
+    });
+
+    vi.spyOn(googleProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
+      provider: 'google',
+      providerAccountId: `sub_open_redir_${Date.now()}`,
+      email: `openredir_${Date.now()}@dubbing.io`,
+      emailVerified: true,
+      name: 'Test User',
+      avatarUrl: '',
+    });
+
+    const res = await request(app)
+      .get(`/api/auth/google/callback?code=mock_code&state=${state}`);
+
+    expect(res.status).toBe(200);
+    // Must NOT redirect to evil.com
+    expect(res.text).not.toContain('https://evil.com');
+    expect(res.text).toContain('/dashboard');
+  });
+
+  it('10. OAuth error handler does NOT render unsanitized provider HTML', async () => {
+    const maliciousPayload = '<script>alert("XSS")</script><img src=x onerror=alert(1)>';
+    const res = await request(app)
+      .get(`/api/auth/google/callback?error=access_denied&error_description=${encodeURIComponent(maliciousPayload)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain('<script>alert("XSS")</script>');
+    expect(res.text).not.toContain('<img src=x');
+    expect(res.text).toContain('oauth_denied');
   });
 });

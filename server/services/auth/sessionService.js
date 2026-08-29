@@ -50,8 +50,10 @@ export function setAuthCookie(res, token) {
  * Clears session cookie on the Express response
  */
 export function clearAuthCookie(res) {
+  const isProd = process.env.NODE_ENV === 'production';
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
+    secure: isProd,
     sameSite: 'lax',
     path: '/',
   });
@@ -63,7 +65,7 @@ export function clearAuthCookie(res) {
 export function verifySessionToken(token) {
   if (!token) return null;
   try {
-    return jwt.verify(token, getJwtSecret());
+    return jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
   } catch (_) {
     return null;
   }

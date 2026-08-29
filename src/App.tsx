@@ -19,9 +19,7 @@ function AppContent() {
   const location = useLocation();
   const { showSuccess, showError, showInfo } = useToast();
 
-  const [userEmail, setUserEmail] = useState<string | null>(() => {
-    return localStorage.getItem('dubbing_io_user');
-  });
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<Project[]>(() => {
     const saved = localStorage.getItem('dubbing_io_projects');
@@ -38,32 +36,11 @@ function AppContent() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewDubOpen, setIsNewDubOpen] = useState(false);
 
-  // 1. Check for OAuth callback token in URL query parameter
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('token');
-    if (tokenParam) {
-      api.setToken(tokenParam);
-      // Clean query parameter from browser address bar
-      window.history.replaceState({}, document.title, window.location.pathname);
-      syncWithBackend();
-    }
-  }, []);
-
-  // Derive activeTab from current route path
-  const currentPath = location.pathname;
-  let activeTab: ActiveTab = 'dashboard';
-  if (currentPath.startsWith('/studio')) activeTab = 'studio';
-  else if (currentPath === '/pricing') activeTab = 'pricing';
-  else if (currentPath === '/signup' || currentPath === '/signin') activeTab = 'signup';
-  else activeTab = 'dashboard';
-
-  // Authenticate session with backend and sync database projects
+  // Authenticate session with backend and sync database projects via secure cookie
   const syncWithBackend = useCallback(async () => {
     try {
       const res = await api.auth.me();
       setUserEmail(res.user.email);
-      localStorage.setItem('dubbing_io_user', res.user.email);
 
       // Fetch persistent user projects from SQLite backend
       try {
@@ -76,16 +53,22 @@ function AppContent() {
         console.warn('Could not sync projects from backend:', err);
       }
     } catch {
-      // Session invalid or expired
+      // Session unauthenticated or expired
       setUserEmail(null);
-      localStorage.removeItem('dubbing_io_user');
-      api.removeToken();
     }
   }, []);
 
   useEffect(() => {
     syncWithBackend();
   }, [syncWithBackend]);
+
+  // Derive activeTab from current route path
+  const currentPath = location.pathname;
+  let activeTab: ActiveTab = 'dashboard';
+  if (currentPath.startsWith('/studio')) activeTab = 'studio';
+  else if (currentPath === '/pricing') activeTab = 'pricing';
+  else if (currentPath === '/signup' || currentPath === '/signin') activeTab = 'signup';
+  else activeTab = 'dashboard';
 
   // Persist offline cache to localStorage
   useEffect(() => {
@@ -162,7 +145,6 @@ function AppContent() {
 
   const handleAuthSuccess = async (email: string) => {
     setUserEmail(email);
-    localStorage.setItem('dubbing_io_user', email);
     showSuccess(`Welcome back, ${email.split('@')[0]}!`);
     await syncWithBackend();
     navigate('/dashboard');
@@ -172,7 +154,6 @@ function AppContent() {
   const handleLogout = async () => {
     await api.auth.logout();
     setUserEmail(null);
-    localStorage.removeItem('dubbing_io_user');
     showInfo('Logged out successfully');
     navigate('/signup');
     window.scrollTo({ top: 0, behavior: 'smooth' });

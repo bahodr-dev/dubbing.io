@@ -23,18 +23,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   React.useEffect(() => {
     if (!isOpen) return;
 
-    const handleAuthMessage = (event: MessageEvent) => {
+    const handleAuthMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
       if (event.data && typeof event.data === 'object') {
         if (event.data.type === 'DUBBING_AUTH_SUCCESS') {
-          if (event.data.token) {
-            api.setToken(event.data.token);
-          }
-          if (event.data.user?.email) {
-            onSuccess(event.data.user.email);
+          try {
+            const meRes = await api.auth.me();
+            onSuccess(meRes.user.email);
             onClose();
+          } catch (err: unknown) {
+            const errorObj = err as Error;
+            setError(errorObj.message || 'Authentication failed.');
           }
         } else if (event.data.type === 'DUBBING_AUTH_ERROR') {
-          setError(event.data.error || 'Authentication failed.');
+          setError('Authentication failed. Please try again.');
         }
       }
     };

@@ -31,7 +31,7 @@ export function authenticateToken(req, res, next) {
   }
 
   try {
-    const user = jwt.verify(token, getJwtSecret());
+    const user = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
     req.user = user;
     next();
   } catch (_) {

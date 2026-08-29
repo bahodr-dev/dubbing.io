@@ -52,7 +52,6 @@ authRouter.post('/signup', async (req, res) => {
     setAuthCookie(res, token);
 
     return res.status(201).json({
-      token,
       user: userRepository.formatUser(newUser),
       message: 'Account created successfully!',
     });
@@ -93,7 +92,6 @@ authRouter.post('/signin', async (req, res) => {
     setAuthCookie(res, token);
 
     return res.json({
-      token,
       user: userRepository.formatUser(user),
       message: 'Logged in successfully!',
     });
@@ -127,14 +125,18 @@ authRouter.post(['/signout', '/logout'], (_req, res) => {
 // 5. OAUTH START (Google, GitHub, Microsoft)
 const handleOAuthRedirect = (req, res) => {
   const { provider } = req.params;
-  const redirectUrl = req.query.redirect_url || '/dashboard';
+  const rawRedirect = req.query.redirect_url;
+  let redirectUrl = '/dashboard';
+  if (typeof rawRedirect === 'string' && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')) {
+    redirectUrl = rawRedirect;
+  }
   try {
     const { authUrl } = startOAuth(provider, { redirectUrl });
     return res.redirect(authUrl);
   } catch (err) {
     console.error(`Error starting ${provider} OAuth:`, err);
     const appUrl = getAppUrl();
-    return res.redirect(`${appUrl}/signup?error=${encodeURIComponent(err.message)}`);
+    return res.redirect(`${appUrl}/signup?error=oauth_failed`);
   }
 };
 
@@ -152,27 +154,37 @@ authRouter.get('/microsoft', (req, res) => {
 });
 
 // 6. OAUTH CALLBACK (Google, GitHub, Microsoft)
+const mapErrorCode = (msg) => {
+  if (!msg) return 'oauth_failed';
+  const lower = String(msg).toLowerCase();
+  if (lower.includes('denied') || lower.includes('cancelled') || lower.includes('consent_required')) return 'oauth_denied';
+  if (lower.includes('expired')) return 'oauth_expired';
+  if (lower.includes('invalid') || lower.includes('state') || lower.includes('mismatch')) return 'oauth_state_invalid';
+  return 'oauth_failed';
+};
+
 const handleOAuthCallbackRoute = async (req, res) => {
   const appUrl = getAppUrl();
   const { provider } = req.params;
   const { code, state, error, error_description } = req.query;
 
-  const renderError = (errorMessage) => {
+  const renderError = (errorMsg) => {
+    const errorCode = mapErrorCode(errorMsg);
     return res.send(`<!DOCTYPE html>
 <html>
 <head><title>Authentication Error</title></head>
 <body style="background:#000;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-  <p style="color:#ef4444;font-size:14px;">${errorMessage}</p>
+  <p style="color:#ef4444;font-size:14px;">Authentication failed. Please try again.</p>
   <script>
     try {
       if (window.opener) {
-        window.opener.postMessage({ type: 'DUBBING_AUTH_ERROR', error: ${JSON.stringify(errorMessage)} }, '*');
+        window.opener.postMessage({ type: 'DUBBING_AUTH_ERROR', error: ${JSON.stringify(errorCode)} }, ${JSON.stringify(appUrl)});
         setTimeout(() => window.close(), 600);
       } else {
-        window.location.replace("${appUrl}/signup?error=${encodeURIComponent(errorMessage)}");
+        window.location.replace("${appUrl}/signup?error=${encodeURIComponent(errorCode)}");
       }
     } catch(e) {
-      window.location.replace("${appUrl}/signup?error=${encodeURIComponent(errorMessage)}");
+      window.location.replace("${appUrl}/signup?error=${encodeURIComponent(errorCode)}");
     }
   </script>
 </body>
@@ -181,7 +193,7 @@ const handleOAuthCallbackRoute = async (req, res) => {
 
   if (error) {
     console.warn(`OAuth error from ${provider}:`, error, error_description);
-    return renderError(error_description || error || 'OAuth authorization failed.');
+    return renderError(`${error} ${error_description || ''}`);
   }
 
   try {
@@ -190,9 +202,17 @@ const handleOAuthCallbackRoute = async (req, res) => {
     // Set secure HTTP-only session cookie
     setAuthCookie(res, result.token);
 
-    const destination = result.redirectUrl && result.redirectUrl.startsWith('/') ? result.redirectUrl : '/dashboard';
+    let destination = '/dashboard';
+    if (
+      result.redirectUrl &&
+      typeof result.redirectUrl === 'string' &&
+      result.redirectUrl.startsWith('/') &&
+      !result.redirectUrl.startsWith('//')
+    ) {
+      destination = result.redirectUrl;
+    }
 
-    // Return HTML with postMessage for popup windows and fallback redirect
+    // Return HTML with postMessage for popup windows and fallback redirect (NO TOKENS IN PAYLOAD OR URL)
     return res.send(`<!DOCTYPE html>
 <html>
 <head>
@@ -227,20 +247,18 @@ const handleOAuthCallbackRoute = async (req, res) => {
   <p style="font-size: 14px; opacity: 0.85; letter-spacing: -0.01em;">Completing authentication...</p>
   <script>
     const payload = {
-      type: 'DUBBING_AUTH_SUCCESS',
-      token: ${JSON.stringify(result.token)},
-      user: ${JSON.stringify(result.user)}
+      type: 'DUBBING_AUTH_SUCCESS'
     };
 
     if (window.opener) {
       try {
-        window.opener.postMessage(payload, '*');
+        window.opener.postMessage(payload, ${JSON.stringify(appUrl)});
       } catch (err) {}
       setTimeout(() => {
         window.close();
       }, 350);
     } else {
-      window.location.replace("${appUrl}${destination}?token=${encodeURIComponent(result.token)}");
+      window.location.replace("${appUrl}${destination}");
     }
   </script>
 </body>
