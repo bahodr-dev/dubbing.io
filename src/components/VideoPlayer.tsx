@@ -55,6 +55,37 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [seekTime]);
 
+  // Handle keyboard shortcuts (Space for Play/Pause, Arrow keys for Seek)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+      if (isInput) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        setCurrentTime(prev => {
+          const next = Math.max(0, prev - 5);
+          if (onTimeUpdate) onTimeUpdate(next);
+          return next;
+        });
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        setCurrentTime(prev => {
+          const next = Math.min(duration, prev + 5);
+          if (onTimeUpdate) onTimeUpdate(next);
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, duration, onTimeUpdate]);
+
   // Handle Play / Pause with Audio Engine
   const togglePlay = () => {
     if (isPlaying) {
@@ -70,12 +101,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         ? (activeTrack === 'dubbed' ? activeSegment.translatedText : activeSegment.originalText)
         : (activeTrack === 'dubbed' ? project.transcript[0]?.translatedText : project.transcript[0]?.originalText);
 
-      playVoiceSample(voice.name, {
-        gender: voice.gender,
-        languageCode: activeTrack === 'dubbed' ? project.targetLanguage : project.originalLanguage,
-        sampleText: textToSpeak,
-        speed: playbackSpeed,
-      });
+      if (textToSpeak) {
+        playVoiceSample(voice.name, {
+          gender: voice.gender,
+          languageCode: activeTrack === 'dubbed' ? project.targetLanguage : project.originalLanguage,
+          sampleText: textToSpeak,
+          speed: playbackSpeed,
+        });
+      }
     }
   };
 
@@ -205,10 +238,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTime = parseFloat(e.target.value);
     setCurrentTime(newTime);
+    if (onTimeUpdate) onTimeUpdate(newTime);
   };
 
   const handleWaveformSeek = (pct: number) => {
-    setCurrentTime(pct * duration);
+    const newTime = pct * duration;
+    setCurrentTime(newTime);
+    if (onTimeUpdate) onTimeUpdate(newTime);
   };
 
   const handleFullscreen = () => {

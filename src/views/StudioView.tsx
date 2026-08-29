@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Project, Voice } from '../types';
 import { VOICES } from '../data/voices';
@@ -49,12 +49,17 @@ export const StudioView: React.FC<StudioViewProps> = ({
   }, [initialProject, projectId, projects]);
 
   const [isProcessing, setIsProcessing] = useState(project?.status === 'processing');
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [targetSpeakerForVoiceModal, setTargetSpeakerForVoiceModal] = useState<string | null>(null);
   const [activeAudioTrack, setActiveAudioTrack] = useState<'original' | 'dubbed'>(
     project?.status === 'completed' ? 'dubbed' : 'original'
   );
   const [currentPlayTime, setCurrentPlayTime] = useState<number>(0);
   const [seekTime, setSeekTime] = useState<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+
+  const isStartingProcessRef = useRef(false);
 
   const handleBack = () => {
     if (onBackToDashboard) {
@@ -82,15 +87,32 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const currentVoice = VOICES.find(v => v.id === project.voiceId) || VOICES[1];
 
   const handleSelectVoice = (voice: Voice) => {
-    const updated = {
-      ...project,
-      voiceId: voice.id,
-      updatedAt: new Date().toISOString(),
-    };
-    setProject(updated);
-    if (onUpdateProject) onUpdateProject(updated);
-    api.projects.update(project.id, { voiceId: voice.id }).catch(() => {});
-    showSuccess(`Voice changed to ${voice.name}`);
+    if (targetSpeakerForVoiceModal) {
+      const updatedSpeakerVoices = {
+        ...(project.speakerVoices || {}),
+        [targetSpeakerForVoiceModal]: voice.id,
+      };
+      const updated = {
+        ...project,
+        speakerVoices: updatedSpeakerVoices,
+        updatedAt: new Date().toISOString(),
+      };
+      setProject(updated);
+      if (onUpdateProject) onUpdateProject(updated);
+      api.projects.update(project.id, { speakerVoices: updatedSpeakerVoices }).catch(() => {});
+      showSuccess(`Voice for ${targetSpeakerForVoiceModal} set to ${voice.name}`);
+      setTargetSpeakerForVoiceModal(null);
+    } else {
+      const updated = {
+        ...project,
+        voiceId: voice.id,
+        updatedAt: new Date().toISOString(),
+      };
+      setProject(updated);
+      if (onUpdateProject) onUpdateProject(updated);
+      api.projects.update(project.id, { voiceId: voice.id }).catch(() => {});
+      showSuccess(`Voice changed to ${voice.name}`);
+    }
   };
 
   const handleLanguageChange = (field: 'originalLanguage' | 'targetLanguage', value: string) => {
@@ -111,32 +133,72 @@ export const StudioView: React.FC<StudioViewProps> = ({
     api.projects.update(project.id, { [field]: value, voiceId: newVoiceId }).catch(() => {});
   };
 
-  const handleStartGeneration = () => {
-    setIsProcessing(true);
-    const updated = {
-      ...project,
-      status: 'processing' as const,
-      updatedAt: new Date().toISOString(),
-    };
-    setProject(updated);
-    if (onUpdateProject) onUpdateProject(updated);
-    api.projects.update(project.id, { status: 'processing' }).catch(() => {});
+  const handleStartGeneration = async () => {
+    if (isProcessing || isStartingProcessRef.current) return;
+    isStartingProcessRef.current = true;
+
+    try {
+      setIsProcessing(true);
+      const updated = {
+        ...project,
+        status: 'processing' as const,
+        updatedAt: new Date().toISOString(),
+      };
+      setProject(updated);
+      if (onUpdateProject) onUpdateProject(updated);
+
+      const res = await api.dubbing.process({
+        projectId: project.id,
+        mediaId: project.mediaId,
+        originalLanguage: project.originalLanguage,
+        targetLanguage: project.targetLanguage,
+        voiceId: project.voiceId,
+        duration: project.duration,
+      });
+
+      if (res?.jobId) {
+        setCurrentJobId(res.jobId);
+      }
+    } catch (err: any) {
+      console.error('Failed to start dubbing pipeline:', err);
+      showError(err.message || 'Failed to start dubbing job.');
+      setIsProcessing(false);
+      const updated = {
+        ...project,
+        status: 'draft' as const,
+        updatedAt: new Date().toISOString(),
+      };
+      setProject(updated);
+      if (onUpdateProject) onUpdateProject(updated);
+    } finally {
+      isStartingProcessRef.current = false;
+    }
   };
 
-  const handleProcessingComplete = () => {
+  const handleProcessingComplete = (result?: any) => {
     setIsProcessing(false);
     setActiveAudioTrack('dubbed');
-    const updated = {
+    
+    const updatedTranscript = result?.transcript && Array.isArray(result.transcript)
+      ? result.transcript
+      : project.transcript;
+
+    const updated: Project = {
       ...project,
+      transcript: updatedTranscript,
+      audioUrl: result?.audioUrl || project.audioUrl,
       status: 'completed' as const,
       updatedAt: new Date().toISOString(),
     };
+
     setProject(updated);
     if (onUpdateProject) onUpdateProject(updated);
     api.projects.update(project.id, { status: 'completed' }).catch(() => {});
+    showSuccess('AI Dubbing completed successfully!');
   };
 
   const handleUpdateSegment = (segmentId: string, originalText: string, translatedText: string) => {
+    setSaveStatus('saving');
     const updatedTranscript = project.transcript.map(seg => 
       seg.id === segmentId ? { ...seg, originalText, translatedText } : seg
     );
@@ -148,10 +210,16 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setProject(updated);
     if (onUpdateProject) onUpdateProject(updated);
 
-    // Synchronize directly with backend SQLite database
-    api.projects.updateTranscript(project.id, updatedTranscript).catch(err => {
-      console.warn('Could not sync transcript:', err);
-    });
+    // Synchronize with backend database
+    api.projects.updateTranscript(project.id, updatedTranscript)
+      .then(() => {
+        setSaveStatus('saved');
+      })
+      .catch(err => {
+        console.warn('Could not sync transcript:', err);
+        setSaveStatus('error');
+        showError('Failed to save transcript update.');
+      });
   };
 
   const handleDownload = async (format: 'video' | 'audio' | 'srt') => {
@@ -187,6 +255,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
     }
   };
 
+  // Distinct speakers in transcript
+  const distinctSpeakers = Array.from(
+    new Set(project.transcript.map(s => s.speaker).filter(Boolean))
+  ) as string[];
+
   return (
     <div style={{ backgroundColor: 'var(--c-white)', minHeight: 'calc(100vh - 68px)' }}>
       {/* Top Workspace Header Bar */}
@@ -205,6 +278,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
             className="btn btn-ghost btn-sm"
             style={{ padding: '6px 8px', color: 'var(--black-60)' }}
             title="Back to Dashboard"
+            aria-label="Back to Dashboard"
           >
             <ArrowLeft size={16} />
           </button>
@@ -234,6 +308,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 onClick={() => handleDownload('srt')}
                 className="btn btn-secondary btn-sm"
                 title="Export Subtitles"
+                aria-label="Export Subtitles"
               >
                 <FileText size={14} />
                 SRT
@@ -241,6 +316,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
               <button
                 onClick={() => handleDownload('video')}
                 className="btn btn-primary btn-sm"
+                aria-label="Download video"
               >
                 <Download size={14} />
                 Download video ↓
@@ -254,7 +330,10 @@ export const StudioView: React.FC<StudioViewProps> = ({
       {isProcessing ? (
         <ProcessingView
           project={project}
+          jobId={currentJobId}
           onComplete={handleProcessingComplete}
+          onError={(msg) => showError(msg)}
+          onRetry={handleStartGeneration}
         />
       ) : (
         <div className="container-xl" style={{ padding: '32px 24px' }}>
@@ -288,6 +367,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   onClick={() => handleDownload('video')}
                   className="btn btn-primary"
                   style={{ fontWeight: 600 }}
+                  aria-label="Download video"
                 >
                   <Download size={15} />
                   Download video ↓
@@ -295,6 +375,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 <button
                   onClick={onOpenNewDub}
                   className="btn btn-secondary"
+                  aria-label="Create another project"
                 >
                   Create another →
                 </button>
@@ -361,11 +442,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   </div>
                 </div>
 
-                {/* Voice Selection Trigger */}
-                <div style={{ marginBottom: '24px' }}>
-                  <label className="label">Neural Voice Profile</label>
+                {/* Primary Voice Selection */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="label">Primary Neural Voice Profile</label>
                   <div
-                    onClick={() => setIsVoiceModalOpen(true)}
+                    onClick={() => {
+                      setTargetSpeakerForVoiceModal(null);
+                      setIsVoiceModalOpen(true);
+                    }}
                     style={{
                       border: 'var(--border-light)',
                       borderRadius: 'var(--radius-sm)',
@@ -400,12 +484,59 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   </div>
                 </div>
 
+                {/* Speaker Voice Mapping (if distinct speakers exist) */}
+                {distinctSpeakers.length > 1 && (
+                  <div style={{ marginBottom: '24px', paddingTop: '16px', borderTop: 'var(--border-light)' }}>
+                    <label className="label">Speaker Voice Assignments ({distinctSpeakers.length} speakers detected)</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                      {distinctSpeakers.map((speaker) => {
+                        const assignedVoiceId = project.speakerVoices?.[speaker] || project.voiceId;
+                        const speakerVoice = VOICES.find(v => v.id === assignedVoiceId) || currentVoice;
+
+                        return (
+                          <div
+                            key={speaker}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '10px 14px',
+                              border: 'var(--border-light)',
+                              borderRadius: 'var(--radius-sm)',
+                              backgroundColor: 'var(--black-02)',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 700 }}>{speaker}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--black-60)' }}>
+                                {speakerVoice.name} ({speakerVoice.style})
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetSpeakerForVoiceModal(speaker);
+                                setIsVoiceModalOpen(true);
+                              }}
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontSize: '11px', padding: '4px 8px' }}
+                            >
+                              Assign Voice →
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Generate Dub Primary Action */}
                 <button
                   type="button"
                   onClick={handleStartGeneration}
+                  disabled={isProcessing}
                   className="btn btn-primary btn-lg"
-                  style={{ width: '100%', padding: '14px', fontSize: '15px' }}
+                  style={{ width: '100%', padding: '14px', fontSize: '15px', opacity: isProcessing ? 0.7 : 1 }}
                 >
                   <Sparkles size={16} />
                   {project.status === 'completed' ? 'Re-generate dub →' : 'Generate dub →'}
@@ -422,6 +553,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 originalLanguage={project.originalLanguage}
                 currentPlayTime={currentPlayTime}
                 onSeekToTime={(time) => setSeekTime(time)}
+                saveStatus={saveStatus}
               />
             </div>
           </div>
@@ -431,9 +563,16 @@ export const StudioView: React.FC<StudioViewProps> = ({
       {/* Voice Selection Modal */}
       <VoiceModal
         isOpen={isVoiceModalOpen}
-        selectedVoiceId={project.voiceId}
+        selectedVoiceId={
+          targetSpeakerForVoiceModal && project.speakerVoices?.[targetSpeakerForVoiceModal]
+            ? project.speakerVoices[targetSpeakerForVoiceModal]
+            : project.voiceId
+        }
         onSelectVoice={handleSelectVoice}
-        onClose={() => setIsVoiceModalOpen(false)}
+        onClose={() => {
+          setTargetSpeakerForVoiceModal(null);
+          setIsVoiceModalOpen(false);
+        }}
         filterLanguageCode={project.targetLanguage}
       />
     </div>

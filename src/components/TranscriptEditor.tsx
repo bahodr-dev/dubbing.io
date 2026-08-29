@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { TranscriptSegment } from '../types';
-import { Check, Edit3, Volume2, X } from 'lucide-react';
+import { Check, Edit3, Volume2, X, Search } from 'lucide-react';
 import { playVoiceSample, stopVoiceSample } from '../audio/audioSynth';
 
 interface TranscriptEditorProps {
@@ -10,6 +10,7 @@ interface TranscriptEditorProps {
   targetLanguage: string;
   originalLanguage: string;
   currentPlayTime?: number;
+  saveStatus?: 'saved' | 'saving' | 'error';
 }
 
 export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
@@ -19,12 +20,14 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   targetLanguage,
   originalLanguage,
   currentPlayTime,
+  saveStatus = 'saved',
 }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'translated' | 'original'>('both');
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
   const [tempOriginal, setTempOriginal] = useState('');
   const [tempTranslated, setTempTranslated] = useState('');
   const [playingSegmentId, setPlayingSegmentId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     return () => {
@@ -72,6 +75,15 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
+  const filteredSegments = segments.filter(seg => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const orig = (seg.originalText || '').toLowerCase();
+    const trans = (seg.translatedText || '').toLowerCase();
+    const spk = (seg.speaker || '').toLowerCase();
+    return orig.includes(q) || trans.includes(q) || spk.includes(q);
+  });
+
   return (
     <div style={{
       backgroundColor: 'var(--c-white)',
@@ -92,7 +104,15 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
         gap: '12px',
       }}>
         <div>
-          <h4 style={{ fontSize: '15px', fontWeight: 700 }}>Transcript & Dub Alignment</h4>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h4 style={{ fontSize: '15px', fontWeight: 700 }}>Transcript & Dub Alignment</h4>
+            {saveStatus === 'saving' && (
+              <span style={{ fontSize: '11px', color: 'var(--black-60)', fontStyle: 'italic' }}>Saving...</span>
+            )}
+            {saveStatus === 'error' && (
+              <span style={{ fontSize: '11px', color: 'var(--c-error, #e53e3e)', fontWeight: 600 }}>Save failed</span>
+            )}
+          </div>
           <p style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px' }}>
             Inspect, edit, and fine-tune synchronized translation segments
           </p>
@@ -156,9 +176,50 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
         </div>
       </div>
 
+      {/* Sub-header Search Bar */}
+      <div style={{
+        padding: '10px 20px',
+        borderBottom: 'var(--border-light)',
+        backgroundColor: 'var(--c-white)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+      }}>
+        <Search size={14} style={{ color: 'var(--black-40)' }} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search in transcript or speaker..."
+          style={{
+            border: 'none',
+            outline: 'none',
+            fontSize: '12px',
+            width: '100%',
+            backgroundColor: 'transparent',
+            color: 'var(--black-100)',
+          }}
+          aria-label="Search transcript"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--black-40)', padding: '2px' }}
+            aria-label="Clear search"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
       {/* Segments List */}
       <div style={{ maxHeight: '520px', overflowY: 'auto' }}>
-        {segments.map((seg, idx) => {
+        {filteredSegments.length === 0 ? (
+          <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--black-40)', fontSize: '13px' }}>
+            No matching segments found.
+          </div>
+        ) : filteredSegments.map((seg, idx) => {
           const isEditing = editingSegmentId === seg.id;
           const isPlaying = playingSegmentId === seg.id;
           const isCurrentActive = typeof currentPlayTime === 'number' && currentPlayTime >= seg.startTime && currentPlayTime <= seg.endTime;

@@ -43,12 +43,17 @@ export interface Project {
   videoUrl: string;
   thumbnailUrl: string;
   voiceId: string;
+  speakerVoices?: Record<string, string>;
+  mediaId?: string;
+  audioUrl?: string;
   transcript: TranscriptSegment[];
   processingProgress?: number;
   currentStageIndex?: number;
   videoQuality?: '1080p' | '4K' | '720p';
   fileSize?: string;
 }
+
+export type JobStatus = 'pending' | 'transcribing' | 'translating' | 'synthesizing' | 'completed' | 'failed';
 
 export interface ProcessingStep {
   id: string;
