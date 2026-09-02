@@ -25,8 +25,7 @@ export const Waveform: React.FC<WaveformProps> = ({
   const animationFrameRef = useRef<number | null>(null);
 
   // Generate deterministic bar heights based on seed
-  const heightsRef = useRef<number[]>([]);
-  if (heightsRef.current.length !== barsCount) {
+  const heights = React.useMemo(() => {
     const arr: number[] = [];
     for (let i = 0; i < barsCount; i++) {
       // Natural speech envelope with varying peaks and quiet pauses
@@ -36,8 +35,8 @@ export const Waveform: React.FC<WaveformProps> = ({
       const barHeight = Math.max(0.15, Math.min(1.0, envelope * (0.3 + pseudoNoise * 0.7)));
       arr.push(barHeight);
     }
-    heightsRef.current = arr;
-  }
+    return arr;
+  }, [barsCount, seed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,7 +60,7 @@ export const Waveform: React.FC<WaveformProps> = ({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, width, canvasHeight);
 
-      const totalBars = heightsRef.current.length;
+      const totalBars = heights.length;
       const barWidth = Math.max(2, (width / totalBars) * 0.6);
       const gap = (width - barWidth * totalBars) / Math.max(1, totalBars - 1);
 
@@ -70,7 +69,7 @@ export const Waveform: React.FC<WaveformProps> = ({
 
       for (let i = 0; i < totalBars; i++) {
         const x = i * (barWidth + gap);
-        const barNormalized = heightsRef.current[i];
+        const barNormalized = heights[i];
         
         // Add subtle wave oscillation when playing
         let animatedFactor = barNormalized;
@@ -104,7 +103,7 @@ export const Waveform: React.FC<WaveformProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, progress, height, color, seed]);
+  }, [isPlaying, progress, height, color, heights]);
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!interactive || !onSeek || !canvasRef.current) return;
