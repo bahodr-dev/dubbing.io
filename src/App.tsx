@@ -199,14 +199,6 @@ function AppContent() {
           isAuthenticated={!!userEmail}
           user={userProfile}
           onLogout={handleLogout}
-          onOpenCheckout={(plan) => {
-            if (!userEmail) {
-              setIsAuthOpen(true);
-            } else {
-              setSelectedPlanId(plan || 'creator');
-              setIsCheckoutOpen(true);
-            }
-          }}
         />
       )}
 

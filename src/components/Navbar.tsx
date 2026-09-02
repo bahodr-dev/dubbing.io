@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Sparkles, Zap } from 'lucide-react';
+import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Sparkles } from 'lucide-react';
 import type { ActiveTab } from '../types';
 import type { UserProfile } from '../services/api';
 import { Logo } from './Logo';
@@ -12,7 +12,6 @@ interface NavbarProps {
   isAuthenticated: boolean;
   user?: UserProfile | null;
   onLogout?: () => void;
-  onOpenCheckout?: (planId?: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,7 +21,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAuthenticated,
   user,
   onLogout,
-  onOpenCheckout,
 }) => {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -193,41 +191,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                   {/* Navigation Items */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAccountMenuOpen(false);
-                        onOpenCheckout ? onOpenCheckout('creator') : onNavigate('pricing');
-                      }}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 12px',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                        color: 'var(--black-100)',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        transition: 'background-color var(--transition-fast)',
-                        marginBottom: '4px',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Zap size={14} color="#000000" />
-                        <span>Upgrade / Top-up</span>
-                      </div>
-                      <span style={{ fontSize: '10.5px', color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', fontWeight: 700 }}>
-                        Payme/Click
-                      </span>
-                    </button>
-
                     <button
                       type="button"
                       onClick={() => {
