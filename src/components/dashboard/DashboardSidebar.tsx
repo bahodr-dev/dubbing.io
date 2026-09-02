@@ -10,7 +10,7 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
-  Crown,
+  CreditCard,
   Gift,
 } from 'lucide-react';
 
@@ -421,7 +421,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
-                <Crown
+                <CreditCard
                   size={17}
                   strokeWidth={1.75}
                   color="rgba(0, 0, 0, 0.65)"
