@@ -10,9 +10,11 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
+  Crown,
+  Gift,
 } from 'lucide-react';
 
-export type DashboardTab = 'home' | 'recent' | 'completed' | 'draft' | 'voices';
+export type DashboardTab = 'home' | 'recent' | 'completed' | 'draft' | 'voices' | 'gifts';
 
 interface DashboardSidebarProps {
   activeTab: DashboardTab;
@@ -393,7 +395,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {/* Pricing & Plans Item */}
+            {/* 1. Pricing & Plans Item */}
             <div className={!isSidebarOpen ? 'tooltip-trigger' : undefined}>
               <button
                 type="button"
@@ -403,6 +405,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
+                  gap: '10px',
                   justifyContent: isSidebarOpen ? 'flex-start' : 'center',
                   padding: isSidebarOpen ? '8px 12px' : '8px 0',
                   borderRadius: '10px',
@@ -418,13 +421,54 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
-                {isSidebarOpen ? (
-                  <span>Pricing & Plans</span>
-                ) : (
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(0, 0, 0, 0.7)' }}>P</span>
-                )}
+                <Crown
+                  size={17}
+                  strokeWidth={1.75}
+                  color="rgba(0, 0, 0, 0.65)"
+                />
+                {isSidebarOpen && <span>Pricing & Plans</span>}
               </button>
               {!isSidebarOpen && <div className="tooltip-content">Pricing & Plans</div>}
+            </div>
+
+            {/* 2. Gifts Item */}
+            <div className={!isSidebarOpen ? 'tooltip-trigger' : undefined}>
+              <button
+                type="button"
+                onClick={() => onTabChange('gifts')}
+                title={!isSidebarOpen ? 'Gifts' : undefined}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  justifyContent: isSidebarOpen ? 'flex-start' : 'center',
+                  padding: isSidebarOpen ? '8px 12px' : '8px 0',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: activeTab === 'gifts' ? 'rgba(0, 0, 0, 0.07)' : 'transparent',
+                  color: activeTab === 'gifts' ? '#000000' : 'rgba(0, 0, 0, 0.8)',
+                  fontSize: '13.5px',
+                  fontWeight: activeTab === 'gifts' ? 600 : 500,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 120ms ease',
+                }}
+                onMouseEnter={(e) => {
+                  if (activeTab !== 'gifts') e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  if (activeTab !== 'gifts') e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <Gift
+                  size={17}
+                  strokeWidth={activeTab === 'gifts' ? 2 : 1.75}
+                  color={activeTab === 'gifts' ? '#000000' : 'rgba(0, 0, 0, 0.65)'}
+                />
+                {isSidebarOpen && <span>Gifts</span>}
+              </button>
+              {!isSidebarOpen && <div className="tooltip-content">Gifts</div>}
             </div>
           </div>
         </div>

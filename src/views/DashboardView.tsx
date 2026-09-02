@@ -12,7 +12,7 @@ import { SearchBar } from '../components/dashboard/SearchBar';
 import { FilterBar } from '../components/dashboard/FilterBar';
 import { ViewModeToggle } from '../components/dashboard/ViewModeToggle';
 import { VoicesExplorer } from '../components/dashboard/VoicesExplorer';
-import { Sparkles, Search, ArrowRight, Link2 } from 'lucide-react';
+import { Sparkles, Search, ArrowRight, Link2, Gift } from 'lucide-react';
 
 interface DashboardViewProps {
   projects: Project[];
@@ -397,6 +397,95 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* ========================================================================= */}
         {activeTab === 'voices' && (
           <VoicesExplorer voices={voiceList} onOpenNewDub={onOpenNewDub} />
+        )}
+
+        {/* ========================================================================= */}
+        {/* 4. GIFTS & REFERRAL REWARDS                                               */}
+        {/* ========================================================================= */}
+        {activeTab === 'gifts' && (
+          <div style={{ maxWidth: '800px', margin: '0 auto', animation: 'fadeIn 180ms ease' }}>
+            <div style={{ marginBottom: '28px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '100px', backgroundColor: 'rgba(0, 0, 0, 0.05)', fontSize: '11.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+                <Gift size={13} />
+                <span>Rewards & Gifts</span>
+              </div>
+              <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#111827', letterSpacing: '-0.02em' }}>
+                Gifts & Referral Rewards
+              </h1>
+              <p style={{ fontSize: '14px', color: 'rgba(0, 0, 0, 0.6)', marginTop: '4px' }}>
+                Share your personal link to earn free video dubbing minutes for every friend who joins.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+              {/* Card 1: Referral Link */}
+              <div style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(0, 0, 0, 0.08)', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.03)' }}>
+                <div style={{ fontSize: '28px', marginBottom: '12px' }}>🎁</div>
+                <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#111827', marginBottom: '6px' }}>
+                  Give 15m, Get 15m
+                </h3>
+                <p style={{ fontSize: '13px', color: 'rgba(0, 0, 0, 0.6)', lineHeight: 1.5, marginBottom: '16px' }}>
+                  When your friend signs up using your code, both of you instantly get 15 free video dubbing minutes.
+                </p>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value="https://dubbing.io/ref/GIFT-782"
+                    style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.12)', fontSize: '13px', backgroundColor: 'rgba(0, 0, 0, 0.02)', fontWeight: 600 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText('https://dubbing.io/ref/GIFT-782');
+                      showToast('Referral link copied to clipboard!');
+                    }}
+                    className="btn btn-primary"
+                    style={{ padding: '10px 16px', fontSize: '13px', fontWeight: 600 }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 2: Redeem Promo Code */}
+              <div style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(0, 0, 0, 0.08)', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.03)' }}>
+                <div style={{ fontSize: '28px', marginBottom: '12px' }}>🎟️</div>
+                <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#111827', marginBottom: '6px' }}>
+                  Redeem Gift / Promo Code
+                </h3>
+                <p style={{ fontSize: '13px', color: 'rgba(0, 0, 0, 0.6)', lineHeight: 1.5, marginBottom: '16px' }}>
+                  Have a promotional voucher or gift coupon? Enter it below to activate extra minutes.
+                </p>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="Enter code (e.g. WELCOME2026)"
+                    id="promo-code-input"
+                    style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.12)', fontSize: '13px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.getElementById('promo-code-input') as HTMLInputElement | null;
+                      if (input && input.value.trim()) {
+                        showToast(`Promo code "${input.value.trim()}" activated! +10 minutes added.`);
+                        input.value = '';
+                      } else {
+                        showToast('Please enter a valid gift code.');
+                      }
+                    }}
+                    className="btn btn-secondary"
+                    style={{ padding: '10px 16px', fontSize: '13px', fontWeight: 600 }}
+                  >
+                    Redeem
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>
