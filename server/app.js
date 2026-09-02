@@ -8,6 +8,7 @@ import { projectsRouter } from './routes/projects.js';
 import { mediaRouter } from './routes/media.js';
 import { voicesRouter } from './routes/voices.js';
 import { dubbingRouter } from './routes/dubbing.js';
+import { paymentsRouter } from './routes/payments.js';
 import { apiLimiter, authLimiter, uploadLimiter } from './middleware/rateLimiter.js';
 
 dotenv.config();
@@ -59,6 +60,7 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/media', process.env.NODE_ENV === 'test' ? mediaRouter : [uploadLimiter, mediaRouter]);
 app.use('/api/voices', voicesRouter);
 app.use('/api/dubbing', dubbingRouter);
+app.use('/api/payments', paymentsRouter);
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {

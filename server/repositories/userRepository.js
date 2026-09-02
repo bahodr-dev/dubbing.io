@@ -47,6 +47,18 @@ export function updateUser(id, updates = {}) {
     fields.push('password_hash = ?');
     values.push(updates.passwordHash);
   }
+  if (updates.plan !== undefined) {
+    fields.push('plan = ?');
+    values.push(updates.plan);
+  }
+  if (updates.minutesBalance !== undefined) {
+    fields.push('minutes_balance = ?');
+    values.push(updates.minutesBalance);
+  }
+  if (updates.subscriptionExpiresAt !== undefined) {
+    fields.push('subscription_expires_at = ?');
+    values.push(updates.subscriptionExpiresAt);
+  }
 
   if (fields.length === 0) return findById(id);
 
@@ -62,6 +74,28 @@ export function updateUser(id, updates = {}) {
   return findById(id);
 }
 
+export function creditSubscription(userId, { plan = 'creator', minutesToAdd = 60, durationDays = 30 }) {
+  const user = findById(userId);
+  if (!user) return null;
+
+  const currentBalance = typeof user.minutes_balance === 'number' ? user.minutes_balance : 5.0;
+  const newBalance = currentBalance + minutesToAdd;
+
+  const expiresDate = new Date();
+  expiresDate.setDate(expiresDate.getDate() + durationDays);
+
+  db.prepare(`
+    UPDATE users
+    SET plan = ?,
+        minutes_balance = ?,
+        subscription_expires_at = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(plan, newBalance, expiresDate.toISOString(), userId);
+
+  return findById(userId);
+}
+
 export function formatUser(user) {
   if (!user) return null;
   return {
@@ -70,6 +104,9 @@ export function formatUser(user) {
     name: user.name || user.email.split('@')[0],
     provider: user.provider || 'email',
     avatarUrl: user.avatar_url || '',
+    plan: user.plan || 'free',
+    minutesBalance: typeof user.minutes_balance === 'number' ? user.minutes_balance : 5.0,
+    subscriptionExpiresAt: user.subscription_expires_at || null,
     createdAt: user.created_at,
   };
 }

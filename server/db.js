@@ -194,9 +194,11 @@ export function initDatabase() {
   try {
     const userColumns = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
     if (!userColumns.includes('updated_at')) {
-      db.exec(`ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`);
+      db.exec(`ALTER TABLE users ADD COLUMN updated_at DATETIME`);
     }
-  } catch (_) {}
+  } catch (err) {
+    console.error('Migration error adding updated_at:', err);
+  }
 
   // Projects Table
   db.exec(`
@@ -278,6 +280,84 @@ export function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_media_assets_user_id ON media_assets (user_id);
       CREATE INDEX IF NOT EXISTS idx_media_assets_project_id ON media_assets (project_id);
     `);
+
+    // Orders & Subscriptions Table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        plan_name TEXT NOT NULL,
+        billing_cycle TEXT DEFAULT 'monthly',
+        amount_uzs INTEGER NOT NULL,
+        amount_usd REAL NOT NULL,
+        minutes_credited REAL NOT NULL,
+        provider TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders (user_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
+    `);
+
+    // Payme Transactions Table (JSON-RPC 2.0 State Machine)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS payme_transactions (
+        id TEXT PRIMARY KEY,
+        payme_id TEXT UNIQUE NOT NULL,
+        order_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        state INTEGER NOT NULL,
+        reason INTEGER,
+        create_time INTEGER NOT NULL,
+        perform_time INTEGER DEFAULT 0,
+        cancel_time INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_payme_trans_payme_id ON payme_transactions (payme_id);
+      CREATE INDEX IF NOT EXISTS idx_payme_trans_order_id ON payme_transactions (order_id);
+    `);
+
+    // Click Transactions Table (SHOP API State Machine)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS click_transactions (
+        id TEXT PRIMARY KEY,
+        click_trans_id TEXT UNIQUE NOT NULL,
+        service_id TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        merchant_trans_id TEXT NOT NULL,
+        amount REAL NOT NULL,
+        action INTEGER NOT NULL,
+        error INTEGER DEFAULT 0,
+        error_note TEXT,
+        sign_time TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_click_trans_click_id ON click_transactions (click_trans_id);
+      CREATE INDEX IF NOT EXISTS idx_click_trans_order_id ON click_transactions (order_id);
+    `);
+
+    // Auto-migrate user table for subscription plan and balance
+    try {
+      const userColumns = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
+      if (!userColumns.includes('plan')) {
+        db.exec(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'`);
+      }
+      if (!userColumns.includes('minutes_balance')) {
+        db.exec(`ALTER TABLE users ADD COLUMN minutes_balance REAL DEFAULT 5.0`);
+      }
+      if (!userColumns.includes('subscription_expires_at')) {
+        db.exec(`ALTER TABLE users ADD COLUMN subscription_expires_at DATETIME`);
+      }
+    } catch (_) {}
 
   // Seed default neural voices if table is empty
   const count = db.prepare('SELECT COUNT(*) as count FROM voices').get().count;

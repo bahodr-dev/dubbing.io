@@ -63,3 +63,38 @@ export interface ProcessingStep {
 }
 
 export type ActiveTab = 'dashboard' | 'studio' | 'pricing' | 'signup';
+
+export interface PaymentPlan {
+  id: string;
+  name: string;
+  tier: 'free' | 'creator' | 'pro' | 'addon';
+  minutes: number;
+  priceMonthlyUSD: number;
+  priceMonthlyUZS: number;
+  priceYearlyUSD: number;
+  priceYearlyUZS: number;
+  description: string;
+  features: string[];
+}
+
+export interface PaymentOrder {
+  id: string;
+  userId: string;
+  planId: string;
+  planName: string;
+  billingCycle: 'monthly' | 'yearly';
+  amountUzs: number;
+  amountUsd: number;
+  minutesCredited: number;
+  provider: 'payme' | 'click' | 'uzum';
+  status: 'pending' | 'completed' | 'cancelled' | 'refunded';
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface UserSubscription {
+  plan: 'free' | 'creator' | 'pro';
+  minutesBalance: number;
+  subscriptionExpiresAt?: string | null;
+}
+

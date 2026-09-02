@@ -85,8 +85,13 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em' }}>$0</span>
-                <span style={{ fontSize: '13px', color: 'var(--black-40)' }}> / month</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em' }}>$0</span>
+                  <span style={{ fontSize: '13px', color: 'var(--black-40)' }}> / month</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px', fontWeight: 600 }}>
+                  0 UZS • Free Forever
+                </div>
               </div>
 
               <div style={{ borderTop: 'var(--border-light)', paddingTop: '20px', marginBottom: '24px' }}>
@@ -151,10 +156,15 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--white-100)' }}>
-                  {billingCycle === 'monthly' ? '$29' : '$23'}
-                </span>
-                <span style={{ fontSize: '13px', color: 'var(--white-40)' }}> / month</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--white-100)' }}>
+                    {billingCycle === 'monthly' ? '$29' : '$23'}
+                  </span>
+                  <span style={{ fontSize: '13px', color: 'var(--white-40)' }}> / month</span>
+                </div>
+                <div style={{ fontSize: '13px', color: '#00C7B1', marginTop: '2px', fontWeight: 700 }}>
+                  {billingCycle === 'monthly' ? '375,000 UZS' : '295,000 UZS'} / oy (Payme / Click)
+                </div>
               </div>
 
               <div style={{ borderTop: 'var(--border-white-subtle)', paddingTop: '20px', marginBottom: '24px' }}>
@@ -163,7 +173,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
                     <Check size={15} strokeWidth={2.5} color="#ffffff" /> 60 video minutes / month
                   </li>
                   <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Check size={15} strokeWidth={2.5} color="#ffffff" /> 40+ supported languages
+                    <Check size={15} strokeWidth={2.5} color="#ffffff" /> 40+ supported languages (incl. Uzbek)
                   </li>
                   <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Check size={15} strokeWidth={2.5} color="#ffffff" /> 1080p Studio master export
@@ -186,7 +196,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
               className="btn btn-white"
               style={{ width: '100%', padding: '12px', fontWeight: 700 }}
             >
-              Start creating →
+              Upgrade with Payme / Click →
             </button>
           </div>
 
@@ -194,17 +204,22 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
           <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div>
               <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: 700 }}>Pro</h3>
+                <h3 style={{ fontSize: '20px', fontWeight: 700 }}>Pro Studio</h3>
                 <p style={{ fontSize: '13px', color: 'var(--black-60)', marginTop: '4px' }}>
                   For studios, agencies, and enterprises
                 </p>
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em' }}>
-                  {billingCycle === 'monthly' ? '$89' : '$71'}
-                </span>
-                <span style={{ fontSize: '13px', color: 'var(--black-40)' }}> / month</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em' }}>
+                    {billingCycle === 'monthly' ? '$89' : '$71'}
+                  </span>
+                  <span style={{ fontSize: '13px', color: 'var(--black-40)' }}> / month</span>
+                </div>
+                <div style={{ fontSize: '13px', color: '#0073FF', marginTop: '2px', fontWeight: 700 }}>
+                  {billingCycle === 'monthly' ? '1,150,000 UZS' : '915,000 UZS'} / oy (Payme / Click)
+                </div>
               </div>
 
               <div style={{ borderTop: 'var(--border-light)', paddingTop: '20px', marginBottom: '24px' }}>
@@ -233,8 +248,77 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
               className="btn btn-secondary"
               style={{ width: '100%', padding: '12px', fontWeight: 600 }}
             >
-              Go Pro →
+              Upgrade with Payme / Click →
             </button>
+          </div>
+        </div>
+
+        {/* Extra Minutes Add-ons Section */}
+        <div style={{
+          backgroundColor: 'var(--black-02)',
+          border: 'var(--border-light)',
+          borderRadius: 'var(--radius-md)',
+          padding: '32px',
+          marginBottom: '64px',
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <span className="mono" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-50)' }}>
+              INSTANT TOP-UP PACKS
+            </span>
+            <h3 style={{ fontSize: '22px', fontWeight: 800, marginTop: '4px', letterSpacing: '-0.02em' }}>
+              Need extra minutes without changing your plan?
+            </h3>
+            <p style={{ fontSize: '13.5px', color: 'var(--black-60)', marginTop: '4px' }}>
+              Minutes never expire and are added directly to your active account balance.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', maxWidth: '640px', margin: '0 auto' }}>
+            <div style={{
+              backgroundColor: '#FFFFFF',
+              border: 'var(--border-light)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 700 }}>+30 Extra Minutes</div>
+                <div style={{ fontSize: '12.5px', color: 'var(--black-60)', marginTop: '2px' }}>One-time top up</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, margin: '12px 0 4px' }}>195,000 UZS <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--black-50)' }}>($15)</span></div>
+              </div>
+              <button
+                onClick={() => onSelectPlan('pack_30')}
+                className="btn btn-secondary btn-sm"
+                style={{ width: '100%', marginTop: '12px', fontWeight: 600 }}
+              >
+                Buy +30 Mins (Payme/Click)
+              </button>
+            </div>
+
+            <div style={{
+              backgroundColor: '#FFFFFF',
+              border: 'var(--border-light)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 700 }}>+100 Extra Minutes</div>
+                <div style={{ fontSize: '12.5px', color: 'var(--black-60)', marginTop: '2px' }}>Best value top up</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, margin: '12px 0 4px' }}>580,000 UZS <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--black-50)' }}>($45)</span></div>
+              </div>
+              <button
+                onClick={() => onSelectPlan('pack_100')}
+                className="btn btn-secondary btn-sm"
+                style={{ width: '100%', marginTop: '12px', fontWeight: 600 }}
+              >
+                Buy +100 Mins (Payme/Click)
+              </button>
+            </div>
           </div>
         </div>
 

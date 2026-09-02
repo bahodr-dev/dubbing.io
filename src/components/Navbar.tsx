@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Sparkles } from 'lucide-react';
+import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Sparkles, Zap } from 'lucide-react';
 import type { ActiveTab } from '../types';
+import type { UserProfile } from '../services/api';
 import { Logo } from './Logo';
 
 interface NavbarProps {
@@ -9,7 +10,9 @@ interface NavbarProps {
   onOpenAuth: () => void;
   onOpenNewDub: () => void;
   isAuthenticated: boolean;
+  user?: UserProfile | null;
   onLogout?: () => void;
+  onOpenCheckout?: (planId?: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -17,7 +20,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onNavigate,
   onOpenAuth,
   isAuthenticated,
+  user,
   onLogout,
+  onOpenCheckout,
 }) => {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -116,8 +121,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  textTransform: 'uppercase',
                 }}>
-                  B
+                  {user?.name?.[0] || user?.email?.[0] || 'U'}
                 </div>
 
                 <span style={{
@@ -125,7 +131,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   fontWeight: 600,
                   color: 'var(--black-100)',
                 }}>
-                  Account
+                  {user?.name || 'Account'}
                 </span>
 
                 <ChevronDown 
@@ -144,7 +150,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
                   right: 0,
-                  width: '240px',
+                  width: '250px',
                   backgroundColor: 'var(--c-white)',
                   border: 'var(--border-light)',
                   borderRadius: 'var(--radius-md)',
@@ -160,10 +166,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     marginBottom: '6px',
                   }}>
                     <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--black-100)' }}>
-                      Bahodir S.
+                      {user?.name || 'User'}
                     </div>
-                    <div style={{ fontSize: '11.5px', color: 'var(--black-60)', marginTop: '1px' }}>
-                      bahodir@dubbing.io
+                    <div style={{ fontSize: '11.5px', color: 'var(--black-60)', marginTop: '1px', wordBreak: 'break-all' }}>
+                      {user?.email || ''}
                     </div>
                     <div style={{
                       display: 'inline-flex',
@@ -172,19 +178,56 @@ export const Navbar: React.FC<NavbarProps> = ({
                       marginTop: '6px',
                       padding: '2px 8px',
                       borderRadius: 'var(--radius-pill)',
-                      backgroundColor: 'var(--black-05)',
+                      backgroundColor: user?.plan === 'pro' ? '#000000' : 'var(--black-05)',
+                      color: user?.plan === 'pro' ? '#FFFFFF' : 'var(--black-80)',
                       border: 'var(--border-subtle)',
                       fontSize: '10.5px',
                       fontWeight: 600,
-                      color: 'var(--black-80)',
                     }}>
-                      <Sparkles size={10} />
-                      Creator Plan • 42/60m
+                      <Sparkles size={10} color={user?.plan === 'pro' ? '#FFFFFF' : undefined} />
+                      <span style={{ textTransform: 'uppercase' }}>
+                        {user?.plan || 'Free'} Plan • {user?.minutesBalance ?? 5}m left
+                      </span>
                     </div>
                   </div>
 
                   {/* Navigation Items */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        onOpenCheckout ? onOpenCheckout('creator') : onNavigate('pricing');
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        color: 'var(--black-100)',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background-color var(--transition-fast)',
+                        marginBottom: '4px',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Zap size={14} color="#000000" />
+                        <span>Upgrade / Top-up</span>
+                      </div>
+                      <span style={{ fontSize: '10.5px', color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', fontWeight: 700 }}>
+                        Payme/Click
+                      </span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {

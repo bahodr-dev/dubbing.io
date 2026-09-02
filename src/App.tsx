@@ -6,12 +6,14 @@ import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { AuthModal } from './components/AuthModal';
 import { NewDubModal } from './components/NewDubModal';
+import { CheckoutModal } from './components/CheckoutModal';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { DashboardView } from './views/DashboardView';
 import { StudioView } from './views/StudioView';
 import { PricingView } from './views/PricingView';
 import { SignUpView } from './views/SignUpView';
 import { api } from './services/api';
+import type { UserProfile } from './services/api';
 import { ToastProvider, useToast } from './context/ToastContext';
 
 function AppContent() {
@@ -19,6 +21,7 @@ function AppContent() {
   const location = useLocation();
   const { showSuccess, showError, showInfo } = useToast();
 
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -35,11 +38,14 @@ function AppContent() {
 
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewDubOpen, setIsNewDubOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState('creator');
 
   // Authenticate session with backend and sync database projects via secure cookie
   const syncWithBackend = useCallback(async () => {
     try {
       const res = await api.auth.me();
+      setUserProfile(res.user);
       setUserEmail(res.user.email);
 
       // Fetch persistent user projects from SQLite backend
@@ -54,6 +60,7 @@ function AppContent() {
       }
     } catch {
       // Session unauthenticated or expired
+      setUserProfile(null);
       setUserEmail(null);
     }
   }, []);
@@ -159,8 +166,23 @@ function AppContent() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSelectPlan = (_plan: string) => {
-    setIsNewDubOpen(true);
+  const handleSelectPlan = (plan: string) => {
+    if (plan === 'free') {
+      if (!userEmail) {
+        setIsAuthOpen(true);
+      } else {
+        navigate('/dashboard');
+      }
+      return;
+    }
+
+    if (!userEmail) {
+      setIsAuthOpen(true);
+      return;
+    }
+
+    setSelectedPlanId(plan);
+    setIsCheckoutOpen(true);
   };
 
   const isAuthPage = location.pathname === '/signup' || location.pathname === '/signin';
@@ -175,7 +197,16 @@ function AppContent() {
           onOpenAuth={() => setIsAuthOpen(true)}
           onOpenNewDub={() => setIsNewDubOpen(true)}
           isAuthenticated={!!userEmail}
+          user={userProfile}
           onLogout={handleLogout}
+          onOpenCheckout={(plan) => {
+            if (!userEmail) {
+              setIsAuthOpen(true);
+            } else {
+              setSelectedPlanId(plan || 'creator');
+              setIsCheckoutOpen(true);
+            }
+          }}
         />
       )}
 
@@ -285,6 +316,13 @@ function AppContent() {
         isOpen={isNewDubOpen}
         onClose={() => setIsNewDubOpen(false)}
         onCreateProject={handleCreateProject}
+      />
+
+      <CheckoutModal
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        selectedPlanId={selectedPlanId}
+        onSuccess={syncWithBackend}
       />
     </div>
   );

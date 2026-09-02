@@ -6,6 +6,9 @@ export interface UserProfile {
   name: string;
   provider: string;
   avatarUrl: string;
+  plan?: 'free' | 'creator' | 'pro';
+  minutesBalance?: number;
+  subscriptionExpiresAt?: string | null;
   createdAt: string;
 }
 
@@ -274,6 +277,45 @@ class ApiClient {
       });
     },
   };
+
+  // 6. PAYMENTS & SUBSCRIPTIONS (Payme & Click)
+  public payments = {
+    getPlans: async (): Promise<{ plans: any[]; supportedProviders: any[] }> => {
+      return this.request<{ plans: any[]; supportedProviders: any[] }>('/payments/plans');
+    },
+
+    createCheckout: async (payload: {
+      planId: string;
+      billingCycle?: 'monthly' | 'yearly';
+      provider?: 'payme' | 'click' | 'uzum';
+      returnUrl?: string;
+    }): Promise<{
+      order: any;
+      paymentUrls: { payme: string; click: string; selected: string };
+      message: string;
+    }> => {
+      return this.request('/payments/checkout', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    getOrders: async (): Promise<{ orders: any[]; subscription: any }> => {
+      return this.request('/payments/orders');
+    },
+
+    getOrder: async (id: string): Promise<{ order: any; subscription: any }> => {
+      return this.request(`/payments/orders/${id}`);
+    },
+
+    simulateSuccess: async (orderId: string): Promise<{ message: string; order: any; user: UserProfile }> => {
+      return this.request('/payments/simulate-success', {
+        method: 'POST',
+        body: JSON.stringify({ orderId }),
+      });
+    },
+  };
 }
 
 export const api = new ApiClient();
+
