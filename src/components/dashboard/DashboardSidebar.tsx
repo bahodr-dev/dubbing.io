@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Project } from '../../types';
 import {
   Home,
@@ -9,6 +10,9 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
+  CreditCard,
+  Sparkles,
+  Zap,
 } from 'lucide-react';
 
 export type DashboardTab = 'home' | 'recent' | 'completed' | 'draft' | 'voices';
@@ -28,6 +32,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   onToggleSidebar,
   projects,
 }) => {
+  const navigate = useNavigate();
   const completedCount = projects.filter((p) => p.status === 'completed').length;
   const draftCount = projects.filter((p) => p.status === 'draft').length;
 
@@ -361,9 +366,132 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
               </button>
               {!isSidebarOpen && <div className="tooltip-content">Voices Studio</div>}
             </div>
+
+            {/* Pricing & Plans Sidebar Item */}
+            <div className={!isSidebarOpen ? 'tooltip-trigger' : undefined}>
+              <button
+                type="button"
+                onClick={() => navigate('/pricing')}
+                title={!isSidebarOpen ? 'Pricing & Plans' : undefined}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: isSidebarOpen ? 'space-between' : 'center',
+                  padding: isSidebarOpen ? '8px 12px' : '8px 0',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'rgba(0, 0, 0, 0.8)',
+                  fontSize: '13.5px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 120ms ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    justifyContent: isSidebarOpen ? 'flex-start' : 'center',
+                  }}
+                >
+                  <CreditCard
+                    size={17}
+                    strokeWidth={1.75}
+                    color="rgba(0, 0, 0, 0.6)"
+                  />
+                  {isSidebarOpen && <span>Pricing & Plans</span>}
+                </div>
+                {isSidebarOpen && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      backgroundColor: '#00C7B1',
+                      color: '#FFFFFF',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Payme
+                  </span>
+                )}
+              </button>
+              {!isSidebarOpen && <div className="tooltip-content">Pricing & Plans</div>}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Sidebar Footer Upgrade Card */}
+      {isSidebarOpen ? (
+        <div
+          style={{
+            backgroundColor: '#FFFFFF',
+            border: '1px solid rgba(0, 0, 0, 0.08)',
+            borderRadius: '12px',
+            padding: '14px',
+            marginTop: '16px',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <Sparkles size={14} color="#000000" />
+            <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#000000' }}>
+              Upgrade Plan
+            </span>
+          </div>
+          <p style={{ fontSize: '11.5px', color: 'rgba(0, 0, 0, 0.6)', lineHeight: 1.4, marginBottom: '10px' }}>
+            Get more video minutes & neural voices with Payme or Click.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/pricing')}
+            className="btn btn-primary btn-sm"
+            style={{
+              width: '100%',
+              padding: '6px 10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <Zap size={13} />
+            <span>View Plans</span>
+          </button>
+        </div>
+      ) : (
+        <div className="tooltip-trigger" style={{ marginTop: '16px' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/pricing')}
+            style={{
+              width: '100%',
+              padding: '8px 0',
+              border: 'none',
+              background: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: '#000000',
+            }}
+            title="Upgrade Plan"
+          >
+            <Zap size={18} />
+          </button>
+          <div className="tooltip-content">Upgrade Plan (Payme/Click)</div>
+        </div>
+      )}
     </aside>
   );
 };
