@@ -24,6 +24,11 @@ export function authenticateToken(req, res, next) {
     }
   }
 
+  // 3. Fallback to query parameter (useful for HTML5 <video> / <img> / <a> tags)
+  if (!token && req.query && req.query.token) {
+    token = req.query.token;
+  }
+
   if (!token) {
     return res.status(401).json({
       error: 'Authentication required. No session token provided.',

@@ -255,6 +255,18 @@ export const StudioView: React.FC<StudioViewProps> = ({
     }
   };
 
+  const handleVideoUploaded = (videoUrl: string, duration?: number) => {
+    const updated = {
+      ...project,
+      videoUrl,
+      duration: duration || project.duration,
+      updatedAt: new Date().toISOString(),
+    };
+    setProject(updated);
+    if (onUpdateProject) onUpdateProject(updated);
+    showSuccess('Video attached to studio workspace!');
+  };
+
   // Distinct speakers in transcript
   const distinctSpeakers = Array.from(
     new Set(project.transcript.map(s => s.speaker).filter(Boolean))
@@ -400,6 +412,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   onChangeTrack={setActiveAudioTrack}
                   onTimeUpdate={(time) => setCurrentPlayTime(time)}
                   seekTime={seekTime}
+                  onVideoUploaded={handleVideoUploaded}
                 />
               </div>
 
