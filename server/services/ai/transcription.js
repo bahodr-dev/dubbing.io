@@ -1,8 +1,6 @@
-import fs from 'fs';
 import { validateMediaFile } from '../media/mediaValidator.js';
 import { extractAudioFromMedia, cleanupTempFile } from '../media/audioExtractor.js';
 import { TranscriptionProviderFactory } from '../transcription/transcriptionProvider.js';
-import { normalizeTranscript } from '../transcription/transcriptNormalizer.js';
 import { logEvent } from '../logger.js';
 
 /**
