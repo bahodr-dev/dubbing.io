@@ -24,23 +24,55 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     } catch (_) {}
   });
 
-  it('1. Factory resolves MockTranscriptionProvider when requested or when no API key', () => {
+  it('1. Factory resolves MockTranscriptionProvider when mock is explicitly requested', () => {
     const mockProvider = TranscriptionProviderFactory.getProvider({ type: 'mock' });
     expect(mockProvider).toBeInstanceOf(MockTranscriptionProvider);
-
-    const autoProvider = TranscriptionProviderFactory.getProvider({ type: 'auto', apiKey: undefined });
-    expect(autoProvider).toBeInstanceOf(MockTranscriptionProvider);
   });
 
-  it('2. Factory resolves OpenAITranscriptionProvider when OpenAI key is provided', () => {
+  it('2. Factory resolves MockTranscriptionProvider for auto in development/test without API key', () => {
+    const origEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'test';
+      const autoProvider = TranscriptionProviderFactory.getProvider({ type: 'auto', apiKey: undefined });
+      expect(autoProvider).toBeInstanceOf(MockTranscriptionProvider);
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
+  });
+
+  it('3. Factory resolves OpenAITranscriptionProvider when API key is provided (auto and openai types)', () => {
     const openaiProvider = TranscriptionProviderFactory.getProvider({
       type: 'openai',
       apiKey: 'sk-test-key-12345678',
     });
     expect(openaiProvider).toBeInstanceOf(OpenAITranscriptionProvider);
+
+    const autoProvider = TranscriptionProviderFactory.getProvider({
+      type: 'auto',
+      apiKey: 'sk-test-key-12345678',
+    });
+    expect(autoProvider).toBeInstanceOf(OpenAITranscriptionProvider);
   });
 
-  it('3. MockTranscriptionProvider produces structured timestamped segments', async () => {
+  it('4. Factory throws configuration error in production when auto is used without API key', () => {
+    const origEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      expect(() => {
+        TranscriptionProviderFactory.getProvider({ type: 'auto', apiKey: undefined });
+      }).toThrow(/OPENAI_API_KEY is missing in production environment/i);
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
+  });
+
+  it('5. Factory throws configuration error when openai type is requested without API key', () => {
+    expect(() => {
+      TranscriptionProviderFactory.getProvider({ type: 'openai', apiKey: undefined });
+    }).toThrow(/OPENAI_API_KEY is missing/i);
+  });
+
+  it('6. MockTranscriptionProvider produces structured timestamped segments', async () => {
     const provider = new MockTranscriptionProvider();
     const result = await provider.transcribe({ duration: 25, language: 'uz' });
 
@@ -52,7 +84,7 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     expect(result.duration).toBeGreaterThanOrEqual(15);
   });
 
-  it('4. OpenAITranscriptionProvider successfully parses OpenAI verbose_json format', async () => {
+  it('7. OpenAITranscriptionProvider successfully parses OpenAI verbose_json format', async () => {
     const mockFetch = async () => {
       return {
         ok: true,
@@ -83,7 +115,7 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     expect(result.segments[1].text).toBe('This is automated transcription.');
   });
 
-  it('5. OpenAITranscriptionProvider handles 401 Unauthorized securely without leaking key', async () => {
+  it('8. OpenAITranscriptionProvider handles 401 Unauthorized securely without leaking key', async () => {
     const mockFetch = async () => ({
       ok: false,
       status: 401,
@@ -101,7 +133,7 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     );
   });
 
-  it('6. OpenAITranscriptionProvider handles 429 Rate Limit error', async () => {
+  it('9. OpenAITranscriptionProvider handles 429 Rate Limit error', async () => {
     const mockFetch = async () => ({
       ok: false,
       status: 429,
@@ -119,7 +151,7 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     );
   });
 
-  it('7. OpenAITranscriptionProvider handles 500 Provider Unavailable error', async () => {
+  it('10. OpenAITranscriptionProvider handles 500 Provider Unavailable error', async () => {
     const mockFetch = async () => ({
       ok: false,
       status: 500,
@@ -137,14 +169,7 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     );
   });
 
-  it('8. Throws if API key is not configured for OpenAITranscriptionProvider', async () => {
-    const provider = new OpenAITranscriptionProvider({ apiKey: '' });
-    await expect(provider.transcribe({ audioFilePath: dummyAudioPath })).rejects.toThrow(
-      /API key is missing/i
-    );
-  });
-
-  it('9. MockTranscriptionProvider accepts custom defaultSegments and normalizes them', async () => {
+  it('11. MockTranscriptionProvider accepts custom defaultSegments and normalizes them', async () => {
     const customSegments = [
       { start: 0, end: 2.5, text: 'Custom test line 1' },
       { start: 2.5, end: 5.0, text: 'Custom test line 2' },
@@ -157,19 +182,8 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     expect(result.segments[1].text).toBe('Custom test line 2');
   });
 
-  it('10. MockTranscriptionProvider with shouldFail=true throws intentional test error', async () => {
+  it('12. MockTranscriptionProvider with shouldFail=true throws intentional test error', async () => {
     const provider = new MockTranscriptionProvider({ shouldFail: true });
     await expect(provider.transcribe()).rejects.toThrow(/intentional failure/i);
-  });
-
-  it('11. Factory safely falls back to MockTranscriptionProvider in production when apiKey is missing', () => {
-    const origEnv = process.env.NODE_ENV;
-    try {
-      process.env.NODE_ENV = 'production';
-      const provider = TranscriptionProviderFactory.getProvider({ type: 'auto', apiKey: undefined });
-      expect(provider).toBeInstanceOf(MockTranscriptionProvider);
-    } finally {
-      process.env.NODE_ENV = origEnv;
-    }
   });
 });

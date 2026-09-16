@@ -300,4 +300,60 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
     expect(JSON.stringify(res.body)).not.toContain('/run/media');
     expect(JSON.stringify(res.body)).not.toContain('/home/');
   });
+
+  it('11. Async job integration: Production without API key fails in background and does NOT produce fake transcript', async () => {
+    const origEnv = process.env.NODE_ENV;
+    const origKey = process.env.OPENAI_API_KEY;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.OPENAI_API_KEY;
+
+      const res = await request(app)
+        .post('/api/dubbing/transcribe')
+        .set('Cookie', userACookie)
+        .send({
+          duration: 20,
+          language: 'en',
+          projectId: userAProjectId,
+        });
+
+      expect(res.status).toBe(202);
+      expect(res.body).toHaveProperty('jobId');
+      const prodJobId = res.body.jobId;
+
+      // Poll until finished
+      let attempts = 0;
+      let prodJobData = null;
+
+      while (attempts < 20) {
+        const pollRes = await request(app)
+          .get(`/api/dubbing/transcribe/jobs/${prodJobId}`)
+          .set('Cookie', userACookie);
+
+        expect(pollRes.status).toBe(200);
+        prodJobData = pollRes.body;
+
+        if (prodJobData.status === 'failed' || prodJobData.status === 'completed') {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        attempts++;
+      }
+
+      // MUST NOT be completed or contain fake transcript
+      expect(prodJobData.status).toBe('failed');
+      expect(prodJobData).not.toHaveProperty('result');
+      expect(prodJobData.error).toMatch(/OPENAI_API_KEY is missing/i);
+
+      // Verify safe error scrubbing
+      expect(prodJobData.error).not.toContain('/home/');
+      expect(prodJobData.error).not.toContain('/run/media');
+    } finally {
+      process.env.NODE_ENV = origEnv;
+      if (origKey !== undefined) {
+        process.env.OPENAI_API_KEY = origKey;
+      }
+    }
+  });
 });

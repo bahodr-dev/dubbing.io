@@ -30,9 +30,9 @@ export async function transcribeAudio({
   providerType = 'auto',
   jobId = null,
 } = {}) {
-  // If no file path provided, return fallback mock segments
+  // If no file path provided, resolve provider according to providerType and environment
   if (!filePath) {
-    const provider = TranscriptionProviderFactory.getProvider({ type: 'mock' });
+    const provider = TranscriptionProviderFactory.getProvider({ type: providerType });
     const result = await provider.transcribe({ duration, language });
     return result.segments;
   }

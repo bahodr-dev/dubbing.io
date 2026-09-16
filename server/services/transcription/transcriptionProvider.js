@@ -195,11 +195,18 @@ export class TranscriptionProviderFactory {
     defaultSegments = null,
     shouldFail = false,
   } = {}) {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    // 1. Explicitly requested mock provider
     if (type === 'mock') {
       return new MockTranscriptionProvider({ defaultSegments, shouldFail });
     }
 
-    if (type === 'openai' || (type === 'auto' && apiKey)) {
+    // 2. Explicitly requested OpenAI provider
+    if (type === 'openai') {
+      if (!apiKey) {
+        throw new Error('OpenAI transcription provider configuration error: OPENAI_API_KEY is missing.');
+      }
       return new OpenAITranscriptionProvider({
         apiKey,
         model,
@@ -207,11 +214,21 @@ export class TranscriptionProviderFactory {
       });
     }
 
-    // Default fallback to mock provider when no API key configured
-    if (process.env.NODE_ENV === 'production' && !apiKey) {
-      console.warn('[TranscriptionProviderFactory] Warning: OPENAI_API_KEY is not configured in production. Falling back to MockTranscriptionProvider.');
+    // 3. Auto resolution with API key
+    if (apiKey) {
+      return new OpenAITranscriptionProvider({
+        apiKey,
+        model,
+        fetchClient,
+      });
     }
 
+    // 4. Auto resolution without API key in production MUST throw
+    if (isProduction) {
+      throw new Error('Transcription provider configuration error: OPENAI_API_KEY is missing in production environment.');
+    }
+
+    // 5. Development/test fallback when no API key configured
     return new MockTranscriptionProvider({ defaultSegments, shouldFail });
   }
 }
