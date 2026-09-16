@@ -43,8 +43,11 @@ export async function transcribeAudio({
     throw new Error(`Media validation failed: ${validation.error}`);
   }
 
-  // 2. Detect Real Media Duration (server source of truth)
-  const actualDuration = await getMediaDuration(filePath);
+  // 2. Resolve Real Media Duration (server source of truth)
+  // If caller already provided a trusted server-detected duration, reuse it to avoid duplicate probing
+  const actualDuration = (typeof duration === 'number' && duration > 0)
+    ? duration
+    : await getMediaDuration(filePath);
 
   let audioPathToClean = null;
   let targetAudioPath = filePath;

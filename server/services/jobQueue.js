@@ -26,12 +26,19 @@ export class JobManager {
     userId,
     projectId = null,
     mediaId = null,
-    filePath,
+    filePath = null,
     language = 'en',
-    duration = 30,
+    duration = null,
     providerType = 'auto',
   } = {}) {
     const id = `txjob-${Date.now()}-${randomUUID().slice(0, 8)}`;
+
+    // For real media, duration is NOT known until probed in background pipeline -> initial duration is null
+    // For mock / test runs without real media (!filePath && !mediaId), explicit duration is respected or fallback to 30
+    const isRealMedia = Boolean(filePath || mediaId);
+    const initialDuration = isRealMedia
+      ? null
+      : (typeof duration === 'number' && duration > 0 ? duration : 30);
 
     // Create persistent DB record
     transcriptionRepo.createTranscriptionJob({
@@ -41,7 +48,7 @@ export class JobManager {
       mediaId,
       status: 'queued',
       language,
-      duration: duration || 0,
+      duration: initialDuration,
     });
 
     const job = {
@@ -55,7 +62,7 @@ export class JobManager {
       progress: 10,
       currentStage: 'Queued for transcription...',
       language,
-      duration: duration || 0,
+      duration: initialDuration,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -90,21 +97,24 @@ export class JobManager {
       transcriptionRepo.updateJobStatus(id, 'processing');
 
       // Real media duration detection (server source of truth)
-      let mediaDuration = duration || 30;
+      let actualDuration = null;
       if (filePath) {
-        mediaDuration = await getMediaDuration(filePath);
-        job.duration = mediaDuration;
+        actualDuration = await getMediaDuration(filePath);
+        job.duration = actualDuration;
+      } else {
+        actualDuration = (typeof duration === 'number' && duration > 0) ? duration : 30;
+        job.duration = actualDuration;
       }
 
       const segments = await transcribeAudio({
         filePath,
-        duration: mediaDuration,
+        duration: actualDuration,
         language,
         providerType,
         jobId: id,
       });
 
-      const finalDuration = (segments && typeof segments.duration === 'number') ? segments.duration : mediaDuration;
+      const finalDuration = (segments && typeof segments.duration === 'number') ? segments.duration : actualDuration;
       job.duration = finalDuration;
 
       job.progress = 90;
@@ -161,7 +171,7 @@ export class JobManager {
     originalLanguage = 'en',
     targetLanguage = 'uz',
     voiceId = 'voice-farrux',
-    duration = 30,
+    duration = null,
   } = {}) {
     const id = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
     const job = {
@@ -176,6 +186,7 @@ export class JobManager {
       currentStage: 'Initializing AI Dubbing Pipeline...',
       targetLanguage,
       voiceId,
+      duration: filePath ? null : (duration || 30),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -201,9 +212,15 @@ export class JobManager {
       job.progress = 25;
       job.updatedAt = new Date().toISOString();
 
+      let actualDuration = params.duration;
+      if (params.filePath) {
+        actualDuration = await getMediaDuration(params.filePath);
+        job.duration = actualDuration;
+      }
+
       const rawSegments = await transcribeAudio({
         filePath: params.filePath,
-        duration: params.duration,
+        duration: actualDuration,
         language: params.originalLanguage,
         jobId: job.id,
       });

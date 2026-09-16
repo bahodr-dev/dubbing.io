@@ -7,6 +7,7 @@ import { spawnSync } from 'child_process';
 import { app } from '../app.js';
 import { db } from '../db.js';
 import * as transcriptionRepo from '../repositories/transcriptionRepository.js';
+import * as durationDetector from '../services/media/durationDetector.js';
 import { JobManager } from '../services/jobQueue.js';
 
 describe('Real Video Transcription API & Duration Integration Tests (/api/dubbing)', () => {
@@ -19,6 +20,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
   let userAMedia10sId = '';
   let userAMedia35sId = '';
   let userACorruptMediaId = '';
+  let media10sLocalPath = '';
 
   beforeAll(async () => {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -57,7 +59,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     userAProjectId = projRes.body.project.id;
 
     // 4. Generate synthetic real media files with FFmpeg
-    const media10sPath = path.join(tempDir, 'synth_10s.mp4');
+    media10sLocalPath = path.join(tempDir, 'synth_10s.mp4');
     const media35sPath = path.join(tempDir, 'synth_35s.mp4');
 
     spawnSync('ffmpeg', [
@@ -65,7 +67,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
       '-f', 'lavfi',
       '-i', 'sine=frequency=440:duration=10',
       '-c:a', 'aac',
-      media10sPath,
+      media10sLocalPath,
     ], { stdio: 'ignore' });
 
     spawnSync('ffmpeg', [
@@ -80,7 +82,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     const upload10sRes = await request(app)
       .post('/api/media/upload')
       .set('Cookie', userACookie)
-      .attach('file', media10sPath);
+      .attach('file', media10sLocalPath);
     userAMedia10sId = upload10sRes.body.id;
 
     // 6. Upload 35s valid media
@@ -154,7 +156,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(res.body.error).toMatch(/project not found or unauthorized/i);
   });
 
-  it('4. Test F — Endpoint is asynchronous and returns HTTP 202 immediately without blocking', async () => {
+  it('4. Test G & F — Endpoint is asynchronous and returns HTTP 202 immediately without blocking', async () => {
     const startTime = Date.now();
     const res = await request(app)
       .post('/api/dubbing/transcribe')
@@ -173,9 +175,57 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(['queued', 'processing']).toContain(res.body.status);
     expect(res.body).not.toHaveProperty('segments'); // Proves no synchronous transcription
     expect(elapsed).toBeLessThan(1000); // Proves request returned immediately
+
+    // Await completion so background execution is drained before next test
+    await pollJob(res.body.jobId, userACookie);
   });
 
-  it('5. Test A — Real media duration (~10s) overrides client duration (30s)', async () => {
+  it('5. Test E — Queued state for real media does NOT claim fake 30-second duration', async () => {
+    // Create job directly for real media file
+    const job = JobManager.createTranscriptionJob({
+      userId: userAId,
+      projectId: userAProjectId,
+      filePath: media10sLocalPath,
+      providerType: 'mock',
+    });
+
+    // In queued state before background probe, duration MUST be null and NOT 30
+    expect(job.status).toBe('queued');
+    expect(job.duration).toBeNull();
+
+    // Check DB record
+    const dbJob = transcriptionRepo.findJobById(job.id);
+    expect(dbJob.duration).toBeNull();
+
+    // Await completion so background execution is drained before next test
+    await pollJob(job.id, userACookie);
+  });
+
+  it('6. Test A — Media duration is probed exactly ONCE during real media transcription', async () => {
+    const probeSpy = vi.spyOn(durationDetector, 'getMediaDuration');
+
+    const res = await request(app)
+      .post('/api/dubbing/transcribe')
+      .set('Cookie', userACookie)
+      .send({
+        mediaId: userAMedia10sId,
+        projectId: userAProjectId,
+        providerType: 'mock',
+      });
+
+    expect(res.status).toBe(202);
+    const jobId = res.body.jobId;
+
+    const jobData = await pollJob(jobId, userACookie);
+    expect(jobData.status).toBe('completed');
+
+    // getMediaDuration must have been called exactly ONCE throughout the entire pipeline
+    expect(probeSpy).toHaveBeenCalledTimes(1);
+
+    probeSpy.mockRestore();
+  });
+
+  it('7. Test B — Real media duration (~10s) overrides client duration (30s)', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
@@ -205,7 +255,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(dbJob.duration).toBeLessThanOrEqual(10.2);
   });
 
-  it('6. Test B — Absurd client duration (999999) is ignored for real media', async () => {
+  it('8. Test D — Absurd client duration (999999) is ignored for real media', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
@@ -226,7 +276,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(jobData.result.duration).not.toBe(999999);
   });
 
-  it('7. Test C — Real media without client duration detects actual duration (no 30s fallback)', async () => {
+  it('9. Test C — Real media without client duration detects actual duration (no 30s fallback)', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
@@ -247,7 +297,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(jobData.result.duration).not.toBe(30);
   });
 
-  it('8. Test D — Duration detection failure on corrupt media results in failed job with safe error', async () => {
+  it('10. Failure handling — Duration detection failure on corrupt media results in failed job with safe error', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
@@ -271,7 +321,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(jobData.error).not.toContain('/run/media');
   });
 
-  it('9. Test E — Mock provider remains functional with explicit duration when no real media is involved', async () => {
+  it('11. Test F — Mock provider remains functional with explicit duration when no real media is involved', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
@@ -291,7 +341,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(jobData.result.segments.length).toBeGreaterThan(0);
   });
 
-  it('10. Test G — Long media duration (>30s) is accurately detected', async () => {
+  it('12. Long media duration (>30s) is accurately detected', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
@@ -317,7 +367,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(proj.duration).toBeLessThanOrEqual(35.3);
   });
 
-  it('11. Ownership isolation — User B cannot retrieve User A transcription job', async () => {
+  it('13. Ownership isolation — User B cannot retrieve User A transcription job', async () => {
     // Create a job for User A
     const resA = await request(app)
       .post('/api/dubbing/transcribe')
@@ -338,7 +388,7 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(resB.body.error).toMatch(/job not found or unauthorized/i);
   });
 
-  it('12. Production without API key fails in background with safe error and no fake transcript', async () => {
+  it('14. Production without API key fails in background with safe error and no fake transcript', async () => {
     const origEnv = process.env.NODE_ENV;
     const origKey = process.env.OPENAI_API_KEY;
 

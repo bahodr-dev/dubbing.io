@@ -18,6 +18,8 @@ export function formatTranscriptionJob(job, segments = []) {
     confidence: s.confidence || 0.95,
   }));
 
+  const parsedDuration = (typeof job.duration === 'number' && !isNaN(job.duration)) ? job.duration : null;
+
   return {
     id: job.id,
     jobId: job.id,
@@ -27,14 +29,14 @@ export function formatTranscriptionJob(job, segments = []) {
     status: job.status,
     progress: job.status === 'completed' ? 100 : (job.status === 'processing' ? 50 : 10),
     language: job.language || 'en',
-    duration: job.duration || 0,
+    duration: parsedDuration,
     error: job.error || null,
     segments: formattedSegments,
     result: job.status === 'completed' ? {
       segments: formattedSegments,
       segmentCount: formattedSegments.length,
       language: job.language || 'en',
-      duration: job.duration || 0,
+      duration: parsedDuration ?? 0,
     } : null,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
@@ -51,7 +53,7 @@ export function createTranscriptionJob({
   mediaId = null,
   status = 'queued',
   language = 'en',
-  duration = 0,
+  duration = null,
   error = null,
 }) {
   const jobId = id || `txjob-${randomUUID().slice(0, 12)}`;

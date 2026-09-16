@@ -67,7 +67,7 @@ dubbingRouter.post('/process', (req, res) => {
       originalLanguage = 'en',
       targetLanguage = 'uz',
       voiceId = 'voice-farrux',
-      duration = 30,
+      duration,
     } = req.body;
 
     // Verify project ownership if projectId provided
@@ -190,7 +190,7 @@ dubbingRouter.post('/transcribe', (req, res) => {
       mediaId,
       mediaPath,
       projectId,
-      duration = 30,
+      duration,
       language = 'en',
       providerType = 'auto',
     } = req.body;
