@@ -127,12 +127,25 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
  * Mock Transcription Provider (Deterministic speech segmenter for tests & local development)
  */
 export class MockTranscriptionProvider extends TranscriptionProvider {
-  constructor({ defaultSegments } = {}) {
+  constructor({ defaultSegments = null, shouldFail = false } = {}) {
     super();
     this.defaultSegments = defaultSegments;
+    this.shouldFail = shouldFail;
   }
 
-  async transcribe({ audioFilePath, language = 'en', duration = 30 } = {}) {
+  async transcribe({ audioFilePath, language = 'en', duration = 30, defaultSegments = null, signal } = {}) {
+    if (this.shouldFail) {
+      throw new Error('Mock transcription provider intentional failure for testing.');
+    }
+
+    const segmentsToUse = defaultSegments || this.defaultSegments;
+    if (segmentsToUse && Array.isArray(segmentsToUse) && segmentsToUse.length > 0) {
+      return normalizeTranscript(segmentsToUse, {
+        language: language || 'en',
+        fallbackDuration: duration || 30,
+      });
+    }
+
     const sentences = [
       "Welcome everyone to our next generation AI studio presentation.",
       "Today we are showcasing automatic video dubbing and voice synchronization.",
@@ -170,11 +183,20 @@ export class TranscriptionProviderFactory {
    * @param {'openai' | 'mock' | 'auto'} [options.type='auto']
    * @param {string} [options.apiKey]
    * @param {string} [options.model]
+   * @param {Array<Object>} [options.defaultSegments]
+   * @param {boolean} [options.shouldFail]
    * @returns {TranscriptionProvider}
    */
-  static getProvider({ type = 'auto', apiKey = process.env.OPENAI_API_KEY, model = process.env.TRANSCRIPTION_MODEL, fetchClient } = {}) {
+  static getProvider({
+    type = 'auto',
+    apiKey = process.env.OPENAI_API_KEY,
+    model = process.env.TRANSCRIPTION_MODEL,
+    fetchClient,
+    defaultSegments = null,
+    shouldFail = false,
+  } = {}) {
     if (type === 'mock') {
-      return new MockTranscriptionProvider();
+      return new MockTranscriptionProvider({ defaultSegments, shouldFail });
     }
 
     if (type === 'openai' || (type === 'auto' && apiKey)) {
@@ -186,6 +208,6 @@ export class TranscriptionProviderFactory {
     }
 
     // Default fallback to mock provider when no API key configured
-    return new MockTranscriptionProvider();
+    return new MockTranscriptionProvider({ defaultSegments, shouldFail });
   }
 }

@@ -143,4 +143,22 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
       /API key is missing/i
     );
   });
+
+  it('9. MockTranscriptionProvider accepts custom defaultSegments and normalizes them', async () => {
+    const customSegments = [
+      { start: 0, end: 2.5, text: 'Custom test line 1' },
+      { start: 2.5, end: 5.0, text: 'Custom test line 2' },
+    ];
+    const provider = new MockTranscriptionProvider({ defaultSegments: customSegments });
+    const result = await provider.transcribe({ duration: 5, language: 'en' });
+
+    expect(result.segmentCount).toBe(2);
+    expect(result.segments[0].text).toBe('Custom test line 1');
+    expect(result.segments[1].text).toBe('Custom test line 2');
+  });
+
+  it('10. MockTranscriptionProvider with shouldFail=true throws intentional test error', async () => {
+    const provider = new MockTranscriptionProvider({ shouldFail: true });
+    await expect(provider.transcribe()).rejects.toThrow(/intentional failure/i);
+  });
 });
