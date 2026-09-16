@@ -149,10 +149,12 @@ class ApiClient {
     transcribe: async (payload: {
       mediaId?: string;
       mediaPath?: string;
+      projectId?: string;
       duration?: number;
       language?: string;
-    }): Promise<{ segments: TranscriptSegment[]; segmentCount: number }> => {
-      return this.request<{ segments: TranscriptSegment[]; segmentCount: number }>('/dubbing/transcribe', {
+      async?: boolean;
+    }): Promise<{ segments: TranscriptSegment[]; segmentCount: number; jobId?: string; status?: string; message?: string }> => {
+      return this.request('/dubbing/transcribe', {
         method: 'POST',
         body: JSON.stringify(payload),
       });

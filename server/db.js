@@ -281,6 +281,49 @@ export function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_media_assets_project_id ON media_assets (project_id);
     `);
 
+    // Transcription Jobs Table (Persistent ASR pipeline tracking)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS transcription_jobs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT,
+        media_id TEXT,
+        status TEXT DEFAULT 'queued',
+        language TEXT DEFAULT 'en',
+        duration REAL DEFAULT 0,
+        error TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL,
+        FOREIGN KEY (media_id) REFERENCES media_assets (id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_transcription_jobs_user_id ON transcription_jobs (user_id);
+      CREATE INDEX IF NOT EXISTS idx_transcription_jobs_project_id ON transcription_jobs (project_id);
+      CREATE INDEX IF NOT EXISTS idx_transcription_jobs_status ON transcription_jobs (status);
+    `);
+
+    // Transcript Segments Table (Fine-grained timestamped dialogue)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS transcript_segments (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        project_id TEXT,
+        start_time REAL NOT NULL,
+        end_time REAL NOT NULL,
+        text TEXT NOT NULL,
+        speaker TEXT,
+        confidence REAL DEFAULT 0.95,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (job_id) REFERENCES transcription_jobs (id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_transcript_segments_job_id ON transcript_segments (job_id);
+      CREATE INDEX IF NOT EXISTS idx_transcript_segments_project_id ON transcript_segments (project_id);
+    `);
+
     // Orders & Subscriptions Table
     db.exec(`
       CREATE TABLE IF NOT EXISTS orders (

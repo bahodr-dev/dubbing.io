@@ -128,34 +128,107 @@ dubbingRouter.get('/jobs/:jobId', (req, res) => {
   }
 });
 
-// 3. TRANSCRIBE (ASR with Media Ownership Check)
+// Alias for transcription specific polling
+dubbingRouter.get('/transcribe/jobs/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const job = JobManager.getJob(jobId, req.user.id);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found or unauthorized.' });
+    }
+
+    return res.json({ job });
+  } catch (err) {
+    console.error('Error fetching transcription job status:', err);
+    return res.status(500).json({ error: 'Failed to fetch transcription job status.' });
+  }
+});
+
+// 3. TRANSCRIBE (ASR with Media & Project Ownership Check)
 dubbingRouter.post('/transcribe', async (req, res) => {
   try {
-    const { mediaId, mediaPath, duration = 30, language = 'en' } = req.body;
+    const {
+      mediaId,
+      mediaPath,
+      projectId,
+      duration = 30,
+      language = 'en',
+      providerType = 'auto',
+      async: isAsync = false,
+    } = req.body;
+
+    // Verify project ownership if projectId provided
+    if (projectId) {
+      const project = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(projectId, req.user.id);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found or unauthorized.' });
+      }
+    }
 
     let fullFilePath = null;
+    let validatedMediaId = null;
     if (mediaId || mediaPath) {
       const mediaResult = resolveUserMediaFile(req, mediaId, mediaPath);
       if (mediaResult.error) {
         return res.status(404).json({ error: mediaResult.error });
       }
       fullFilePath = mediaResult.filePath;
+      validatedMediaId = mediaResult.media ? mediaResult.media.id : null;
     }
 
+    // If async requested, create queued background job
+    if (isAsync) {
+      const job = JobManager.createTranscriptionJob({
+        userId: req.user.id,
+        projectId,
+        mediaId: validatedMediaId,
+        filePath: fullFilePath,
+        language,
+        duration,
+        providerType,
+      });
+
+      return res.status(202).json({
+        jobId: job.id,
+        status: job.status,
+        message: 'Transcription job queued in background.',
+      });
+    }
+
+    // Synchronous execution
     const segments = await transcribeAudio({
       filePath: fullFilePath,
       duration,
       language,
+      providerType,
     });
 
+    // If projectId provided, synchronize segments to project
+    if (projectId) {
+      try {
+        db.prepare(`
+          UPDATE projects
+          SET segments_json = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND user_id = ?
+        `).run(JSON.stringify(segments), projectId, req.user.id);
+      } catch (dbErr) {
+        console.warn('Could not save segments to project:', dbErr);
+      }
+    }
+
     return res.json({
+      jobId: `sync-${Date.now()}`,
+      status: 'completed',
       segments,
       segmentCount: segments.length,
+      language,
+      duration,
       message: 'Audio transcribed successfully!',
     });
   } catch (err) {
     console.error('Error transcribing audio:', err);
-    return res.status(500).json({ error: 'Failed to transcribe audio.' });
+    return res.status(500).json({ error: err.message || 'Failed to transcribe audio.' });
   }
 });
 

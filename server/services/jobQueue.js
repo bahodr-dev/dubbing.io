@@ -3,11 +3,131 @@ import { transcribeAudio } from './ai/transcription.js';
 import { translateSegments } from './ai/translation.js';
 import { synthesizeSpeech } from './ai/tts.js';
 import { db } from '../db.js';
+import * as transcriptionRepo from '../repositories/transcriptionRepository.js';
+import { logEvent } from './logger.js';
 
-// In-memory store for real-time fast access with DB sync
+// In-memory store for fast polling with DB sync
 const jobs = new Map();
 
 export class JobManager {
+  /**
+   * Creates a dedicated asynchronous transcription job
+   */
+  static createTranscriptionJob({
+    userId,
+    projectId = null,
+    mediaId = null,
+    filePath,
+    language = 'en',
+    duration = 30,
+    providerType = 'auto',
+  } = {}) {
+    const id = `txjob-${Date.now()}-${randomUUID().slice(0, 8)}`;
+
+    // Create persistent DB record
+    transcriptionRepo.createTranscriptionJob({
+      id,
+      userId,
+      projectId,
+      mediaId,
+      status: 'queued',
+      language,
+      duration,
+    });
+
+    const job = {
+      id,
+      jobId: id,
+      type: 'transcription',
+      userId,
+      projectId,
+      mediaId,
+      status: 'queued',
+      progress: 10,
+      currentStage: 'Queued for transcription...',
+      language,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    jobs.set(id, job);
+    logEvent('transcription_job_started', { jobId: id, userId, projectId, mediaId, language });
+
+    // Execute transcription pipeline asynchronously
+    this.runTranscriptionPipeline(job, { filePath, language, duration, providerType }).catch((err) => {
+      job.status = 'failed';
+      job.error = err.message || 'Transcription pipeline execution failed';
+      job.updatedAt = new Date().toISOString();
+      transcriptionRepo.updateJobStatus(id, 'failed', { error: job.error });
+    });
+
+    return job;
+  }
+
+  /**
+   * Runs the transcription-only pipeline
+   */
+  static async runTranscriptionPipeline(job, { filePath, language, duration, providerType }) {
+    const id = job.id;
+    try {
+      job.status = 'processing';
+      job.currentStage = 'Extracting audio with FFmpeg & transcribing with neural model...';
+      job.progress = 40;
+      job.updatedAt = new Date().toISOString();
+      transcriptionRepo.updateJobStatus(id, 'processing');
+
+      const segments = await transcribeAudio({
+        filePath,
+        duration,
+        language,
+        providerType,
+        jobId: id,
+      });
+
+      job.progress = 90;
+      job.currentStage = 'Normalizing and persisting dialogue segments...';
+      job.updatedAt = new Date().toISOString();
+
+      // Save segments to database
+      transcriptionRepo.saveTranscriptSegments(id, job.projectId, segments);
+
+      // If tied to a project, also update the project's segments_json
+      if (job.projectId) {
+        try {
+          db.prepare(`
+            UPDATE projects
+            SET segments_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND user_id = ?
+          `).run(JSON.stringify(segments), job.projectId, job.userId);
+        } catch (dbErr) {
+          console.warn('[JobManager] Could not update project segments_json:', dbErr);
+        }
+      }
+
+      job.status = 'completed';
+      job.currentStage = 'Transcription completed successfully!';
+      job.progress = 100;
+      job.result = {
+        segments,
+        segmentCount: segments.length,
+        language,
+      };
+      job.segments = segments;
+      job.updatedAt = new Date().toISOString();
+
+      transcriptionRepo.updateJobStatus(id, 'completed', { language, duration });
+    } catch (err) {
+      job.status = 'failed';
+      job.error = err.message || 'Transcription failed';
+      job.updatedAt = new Date().toISOString();
+      transcriptionRepo.updateJobStatus(id, 'failed', { error: job.error });
+      throw err;
+    }
+  }
+
+  /**
+   * Creates a full dubbing pipeline job
+   */
   static createJob({
     userId,
     projectId,
@@ -21,6 +141,8 @@ export class JobManager {
     const id = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
     const job = {
       id,
+      jobId: id,
+      type: 'dubbing',
       userId,
       projectId,
       mediaId,
@@ -35,7 +157,7 @@ export class JobManager {
 
     jobs.set(id, job);
 
-    // Kick off asynchronous pipeline in background (Non-blocking)
+    // Kick off asynchronous pipeline in background
     this.runPipeline(job, { filePath, originalLanguage, targetLanguage, voiceId, duration }).catch((err) => {
       console.error(`[Job ${id}] Fatal error in pipeline:`, err);
       job.status = 'failed';
@@ -46,10 +168,7 @@ export class JobManager {
     return job;
   }
 
-  static async runPipeline(
-    job,
-    params
-  ) {
+  static async runPipeline(job, params) {
     try {
       // Stage 1: Transcribing Audio (ASR)
       job.status = 'transcribing';
@@ -61,6 +180,7 @@ export class JobManager {
         filePath: params.filePath,
         duration: params.duration,
         language: params.originalLanguage,
+        jobId: job.id,
       });
 
       // Stage 2: Translating Segments
@@ -118,11 +238,25 @@ export class JobManager {
     }
   }
 
+  /**
+   * Retrieves a job by ID, verifying user authorization
+   */
   static getJob(jobId, userId) {
+    if (!jobId || !userId) return null;
+
+    // First check memory map
     const job = jobs.get(jobId);
-    if (!job || job.userId !== userId) {
-      return null;
+    if (job && job.userId === userId) {
+      return job;
     }
-    return job;
+
+    // Fall back to database check if it's a transcription job
+    const dbJob = transcriptionRepo.findJobByIdAndUser(jobId, userId);
+    if (dbJob) {
+      const segments = transcriptionRepo.findSegmentsByJobId(jobId);
+      return transcriptionRepo.formatTranscriptionJob(dbJob, segments);
+    }
+
+    return null;
   }
 }

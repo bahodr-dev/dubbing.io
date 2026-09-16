@@ -40,27 +40,40 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
 
     try {
       let finalMediaUrl = videoUrl;
+      let mediaId: string | undefined = undefined;
 
       // 1. Upload to backend if file exists
       if (selectedFile) {
         try {
           const uploadRes = await api.media.upload(selectedFile);
           finalMediaUrl = uploadRes.url;
+          mediaId = uploadRes.id || uploadRes.mediaId;
         } catch (err) {
           console.warn('Using local media path:', err);
         }
       }
 
-      // 2. Generate Dubbing Timeline
+      // 2. Generate Dubbing / Real Transcription Timeline
       let transcript = INITIAL_PROJECTS[0].transcript;
       try {
-        const dubRes = await api.dubbing.generate({
-          targetLanguage,
-          duration: 30,
-          title: projectName || 'New Studio Dub',
-        });
-        if (dubRes.transcript && dubRes.transcript.length > 0) {
-          transcript = dubRes.transcript;
+        if (mediaId) {
+          const txRes = await api.dubbing.transcribe({
+            mediaId,
+            language: 'en',
+            duration: 30,
+          });
+          if (txRes.segments && txRes.segments.length > 0) {
+            transcript = txRes.segments;
+          }
+        } else {
+          const dubRes = await api.dubbing.generate({
+            targetLanguage,
+            duration: 30,
+            title: projectName || 'New Studio Dub',
+          });
+          if (dubRes.transcript && dubRes.transcript.length > 0) {
+            transcript = dubRes.transcript;
+          }
         }
       } catch (err) {
         console.warn('Dubbing timeline generation:', err);
@@ -76,6 +89,7 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         videoUrl: finalMediaUrl,
+        mediaId,
         thumbnailUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
         voiceId: targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena',
         transcript,
