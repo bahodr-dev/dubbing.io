@@ -208,6 +208,10 @@ export class TranscriptionProviderFactory {
     }
 
     // Default fallback to mock provider when no API key configured
+    if (process.env.NODE_ENV === 'production' && !apiKey) {
+      console.warn('[TranscriptionProviderFactory] Warning: OPENAI_API_KEY is not configured in production. Falling back to MockTranscriptionProvider.');
+    }
+
     return new MockTranscriptionProvider({ defaultSegments, shouldFail });
   }
 }

@@ -161,4 +161,15 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     const provider = new MockTranscriptionProvider({ shouldFail: true });
     await expect(provider.transcribe()).rejects.toThrow(/intentional failure/i);
   });
+
+  it('11. Factory safely falls back to MockTranscriptionProvider in production when apiKey is missing', () => {
+    const origEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      const provider = TranscriptionProviderFactory.getProvider({ type: 'auto', apiKey: undefined });
+      expect(provider).toBeInstanceOf(MockTranscriptionProvider);
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
+  });
 });
