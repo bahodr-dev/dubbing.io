@@ -6,6 +6,18 @@ import { db } from '../db.js';
  */
 export function formatTranscriptionJob(job, segments = []) {
   if (!job) return null;
+  const formattedSegments = segments.map((s) => ({
+    id: s.id,
+    start: s.start_time,
+    end: s.end_time,
+    text: s.text,
+    startTime: s.start_time,
+    endTime: s.end_time,
+    originalText: s.text,
+    speaker: s.speaker || 'Speaker 1',
+    confidence: s.confidence || 0.95,
+  }));
+
   return {
     id: job.id,
     jobId: job.id,
@@ -13,20 +25,17 @@ export function formatTranscriptionJob(job, segments = []) {
     projectId: job.project_id || null,
     mediaId: job.media_id || null,
     status: job.status,
+    progress: job.status === 'completed' ? 100 : (job.status === 'processing' ? 50 : 10),
     language: job.language || 'en',
     duration: job.duration || 0,
     error: job.error || null,
-    segments: segments.map((s) => ({
-      id: s.id,
-      start: s.start_time,
-      end: s.end_time,
-      text: s.text,
-      startTime: s.start_time,
-      endTime: s.end_time,
-      originalText: s.text,
-      speaker: s.speaker || 'Speaker 1',
-      confidence: s.confidence || 0.95,
-    })),
+    segments: formattedSegments,
+    result: job.status === 'completed' ? {
+      segments: formattedSegments,
+      segmentCount: formattedSegments.length,
+      language: job.language || 'en',
+      duration: job.duration || 0,
+    } : null,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
   };

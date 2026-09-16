@@ -6,6 +6,14 @@ import { db } from '../db.js';
 import * as transcriptionRepo from '../repositories/transcriptionRepository.js';
 import { logEvent } from './logger.js';
 
+function sanitizeError(err) {
+  if (!err) return 'Transcription failed';
+  const raw = typeof err === 'string' ? err : (err.message || 'Transcription failed');
+  let sanitized = raw.replace(/(\/[a-zA-Z0-9_.-]+)+/g, '[path]');
+  sanitized = sanitized.replace(/sk-[a-zA-Z0-9_-]{10,}/g, '[redacted_key]');
+  return sanitized.split('\n')[0].trim() || 'Transcription failed';
+}
+
 // In-memory store for fast polling with DB sync
 const jobs = new Map();
 
@@ -53,12 +61,15 @@ export class JobManager {
     jobs.set(id, job);
     logEvent('transcription_job_started', { jobId: id, userId, projectId, mediaId, language });
 
-    // Execute transcription pipeline asynchronously
-    this.runTranscriptionPipeline(job, { filePath, language, duration, providerType }).catch((err) => {
-      job.status = 'failed';
-      job.error = err.message || 'Transcription pipeline execution failed';
-      job.updatedAt = new Date().toISOString();
-      transcriptionRepo.updateJobStatus(id, 'failed', { error: job.error });
+    // Execute transcription pipeline asynchronously on next event loop tick
+    setImmediate(() => {
+      this.runTranscriptionPipeline(job, { filePath, language, duration, providerType }).catch((err) => {
+        const safeError = sanitizeError(err);
+        job.status = 'failed';
+        job.error = safeError;
+        job.updatedAt = new Date().toISOString();
+        transcriptionRepo.updateJobStatus(id, 'failed', { error: safeError });
+      });
     });
 
     return job;
@@ -117,10 +128,11 @@ export class JobManager {
 
       transcriptionRepo.updateJobStatus(id, 'completed', { language, duration });
     } catch (err) {
+      const safeError = sanitizeError(err);
       job.status = 'failed';
-      job.error = err.message || 'Transcription failed';
+      job.error = safeError;
       job.updatedAt = new Date().toISOString();
-      transcriptionRepo.updateJobStatus(id, 'failed', { error: job.error });
+      transcriptionRepo.updateJobStatus(id, 'failed', { error: safeError });
       throw err;
     }
   }

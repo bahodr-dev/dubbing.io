@@ -121,7 +121,26 @@ dubbingRouter.get('/jobs/:jobId', (req, res) => {
       return res.status(404).json({ error: 'Job not found or unauthorized.' });
     }
 
-    return res.json({ job });
+    const segments = job.segments || (job.result && job.result.segments) || [];
+    const responsePayload = {
+      jobId: job.id || job.jobId,
+      status: job.status,
+      progress: job.progress || (job.status === 'completed' ? 100 : (job.status === 'processing' ? 50 : 10)),
+      job,
+    };
+
+    if (job.status === 'completed') {
+      responsePayload.result = job.result || {
+        segments,
+        segmentCount: segments.length,
+        language: job.language || 'en',
+        duration: job.duration || 0,
+      };
+    } else if (job.status === 'failed') {
+      responsePayload.error = job.error || 'Operation failed.';
+    }
+
+    return res.json(responsePayload);
   } catch (err) {
     console.error('Error fetching job status:', err);
     return res.status(500).json({ error: 'Failed to fetch job status.' });
@@ -138,15 +157,34 @@ dubbingRouter.get('/transcribe/jobs/:jobId', (req, res) => {
       return res.status(404).json({ error: 'Job not found or unauthorized.' });
     }
 
-    return res.json({ job });
+    const segments = job.segments || (job.result && job.result.segments) || [];
+    const responsePayload = {
+      jobId: job.id || job.jobId,
+      status: job.status,
+      progress: job.progress || (job.status === 'completed' ? 100 : (job.status === 'processing' ? 50 : 10)),
+      job,
+    };
+
+    if (job.status === 'completed') {
+      responsePayload.result = {
+        segments,
+        segmentCount: segments.length,
+        language: job.language || 'en',
+        duration: job.duration || 0,
+      };
+    } else if (job.status === 'failed') {
+      responsePayload.error = job.error || 'Transcription failed.';
+    }
+
+    return res.json(responsePayload);
   } catch (err) {
     console.error('Error fetching transcription job status:', err);
     return res.status(500).json({ error: 'Failed to fetch transcription job status.' });
   }
 });
 
-// 3. TRANSCRIBE (ASR with Media & Project Ownership Check)
-dubbingRouter.post('/transcribe', async (req, res) => {
+// 3. TRANSCRIBE (Fully Asynchronous ASR with Media & Project Ownership Check)
+dubbingRouter.post('/transcribe', (req, res) => {
   try {
     const {
       mediaId,
@@ -155,7 +193,6 @@ dubbingRouter.post('/transcribe', async (req, res) => {
       duration = 30,
       language = 'en',
       providerType = 'auto',
-      async: isAsync = false,
     } = req.body;
 
     // Verify project ownership if projectId provided
@@ -177,58 +214,25 @@ dubbingRouter.post('/transcribe', async (req, res) => {
       validatedMediaId = mediaResult.media ? mediaResult.media.id : null;
     }
 
-    // If async requested, create queued background job
-    if (isAsync) {
-      const job = JobManager.createTranscriptionJob({
-        userId: req.user.id,
-        projectId,
-        mediaId: validatedMediaId,
-        filePath: fullFilePath,
-        language,
-        duration,
-        providerType,
-      });
-
-      return res.status(202).json({
-        jobId: job.id,
-        status: job.status,
-        message: 'Transcription job queued in background.',
-      });
-    }
-
-    // Synchronous execution
-    const segments = await transcribeAudio({
+    // Always create an asynchronous background job - NEVER transcribe synchronously inside request
+    const job = JobManager.createTranscriptionJob({
+      userId: req.user.id,
+      projectId,
+      mediaId: validatedMediaId,
       filePath: fullFilePath,
-      duration,
       language,
+      duration,
       providerType,
     });
 
-    // If projectId provided, synchronize segments to project
-    if (projectId) {
-      try {
-        db.prepare(`
-          UPDATE projects
-          SET segments_json = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ? AND user_id = ?
-        `).run(JSON.stringify(segments), projectId, req.user.id);
-      } catch (dbErr) {
-        console.warn('Could not save segments to project:', dbErr);
-      }
-    }
-
-    return res.json({
-      jobId: `sync-${Date.now()}`,
-      status: 'completed',
-      segments,
-      segmentCount: segments.length,
-      language,
-      duration,
-      message: 'Audio transcribed successfully!',
+    return res.status(202).json({
+      jobId: job.id,
+      status: 'queued',
+      message: 'Transcription job queued in background.',
     });
   } catch (err) {
-    console.error('Error transcribing audio:', err);
-    return res.status(500).json({ error: err.message || 'Failed to transcribe audio.' });
+    console.error('Error creating transcription job:', err);
+    return res.status(500).json({ error: 'Failed to create transcription job.' });
   }
 });
 
