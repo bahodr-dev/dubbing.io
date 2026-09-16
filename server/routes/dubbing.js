@@ -227,7 +227,7 @@ dubbingRouter.post('/transcribe', (req, res) => {
 
     return res.status(202).json({
       jobId: job.id,
-      status: 'queued',
+      status: job.status,
       message: 'Transcription job queued in background.',
     });
   } catch (err) {

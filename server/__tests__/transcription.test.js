@@ -9,7 +9,7 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
   let userACookie = '';
   let userBCookie = '';
   let userAId = '';
-  let userBId = '';
+  let _userBId = '';
   let userAProjectId = '';
   let userAMediaId = '';
   let successfulJobId = '';
@@ -38,7 +38,7 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
       });
     const cookiesB = resB.headers['set-cookie'] || [];
     userBCookie = cookiesB.find((c) => c.includes('dubbing_session='));
-    userBId = resB.body.user.id;
+    _userBId = resB.body.user.id;
 
     // 3. User A creates a project
     const projRes = await request(app)
@@ -103,7 +103,7 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
     expect(res.status).toBe(202);
     expect(res.body).toHaveProperty('jobId');
     expect(res.body.jobId).toMatch(/^txjob-/);
-    expect(res.body.status).toBe('queued');
+    expect(['queued', 'processing']).toContain(res.body.status);
     expect(res.body).not.toHaveProperty('segments'); // Proves no synchronous transcription in request
 
     successfulJobId = res.body.jobId;
@@ -122,7 +122,7 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
 
     expect(res.status).toBe(202);
     expect(res.body).toHaveProperty('jobId');
-    expect(res.body.status).toBe('queued');
+    expect(['queued', 'processing']).toContain(res.body.status);
     expect(res.body).not.toHaveProperty('segments');
   });
 
@@ -136,6 +136,8 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
         duration: 15,
         language: 'uz',
         projectId: userAProjectId,
+        mediaId: userAMediaId,
+        providerType: 'mock',
       });
 
     expect(res.status).toBe(202);
@@ -144,8 +146,11 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
       expect.objectContaining({
         userId: userAId,
         projectId: userAProjectId,
+        mediaId: userAMediaId,
+        filePath: expect.any(String),
         duration: 15,
         language: 'uz',
+        providerType: 'mock',
       })
     );
 
