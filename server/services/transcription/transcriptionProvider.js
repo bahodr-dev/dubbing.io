@@ -36,7 +36,7 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
     this.fetch = fetchClient;
   }
 
-  async transcribe({ audioFilePath, language = 'en', prompt, signal } = {}) {
+  async transcribe({ audioFilePath, language = 'en', prompt, signal, duration = 0 } = {}) {
     if (!this.apiKey) {
       throw new Error('OpenAI API key is missing. Set OPENAI_API_KEY environment variable.');
     }
@@ -103,22 +103,22 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
     const data = await response.json();
     const rawSegments = Array.isArray(data.segments) ? data.segments : [];
     const detectedLanguage = data.language || language || 'en';
-    const duration = typeof data.duration === 'number' ? data.duration : 0;
+    const finalDuration = typeof data.duration === 'number' ? data.duration : (typeof duration === 'number' ? duration : 0);
 
     // If verbose_json did not return segments array but returned whole text
     if (rawSegments.length === 0 && data.text && data.text.trim()) {
       return normalizeTranscript([
         {
           start: 0,
-          end: duration || 5.0,
+          end: finalDuration || 5.0,
           text: data.text.trim(),
         }
-      ], { language: detectedLanguage, fallbackDuration: duration });
+      ], { language: detectedLanguage, fallbackDuration: finalDuration });
     }
 
     return normalizeTranscript(rawSegments, {
       language: detectedLanguage,
-      fallbackDuration: duration,
+      fallbackDuration: finalDuration,
     });
   }
 }
@@ -154,7 +154,7 @@ export class MockTranscriptionProvider extends TranscriptionProvider {
       "Thank you for watching, and start creating your first multilingual dub today."
     ];
 
-    const totalDuration = Math.max(15, duration || 30);
+    const totalDuration = (typeof duration === 'number' && duration > 0) ? duration : 30;
     const step = totalDuration / sentences.length;
 
     const rawSegments = sentences.map((sentence, idx) => ({

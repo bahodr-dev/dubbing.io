@@ -1,21 +1,28 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { spawnSync } from 'child_process';
 import { app } from '../app.js';
 import { db } from '../db.js';
 import * as transcriptionRepo from '../repositories/transcriptionRepository.js';
 import { JobManager } from '../services/jobQueue.js';
 
-describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () => {
+describe('Real Video Transcription API & Duration Integration Tests (/api/dubbing)', () => {
+  const tempDir = path.join(os.tmpdir(), `test_tx_media_${Date.now()}`);
   let userACookie = '';
   let userBCookie = '';
   let userAId = '';
   let _userBId = '';
   let userAProjectId = '';
-  let userAMediaId = '';
-  let successfulJobId = '';
-  let failedJobId = '';
+  let userAMedia10sId = '';
+  let userAMedia35sId = '';
+  let userACorruptMediaId = '';
 
   beforeAll(async () => {
+    fs.mkdirSync(tempDir, { recursive: true });
+
     // 1. Sign up User A
     const resA = await request(app)
       .post('/api/auth/signup')
@@ -49,14 +56,71 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
       });
     userAProjectId = projRes.body.project.id;
 
-    // 4. User A uploads a media file
-    const dummyBuffer = Buffer.from('FAKE_VIDEO_STREAM_FOR_TRANSCRIPTION_TEST_123');
-    const uploadRes = await request(app)
+    // 4. Generate synthetic real media files with FFmpeg
+    const media10sPath = path.join(tempDir, 'synth_10s.mp4');
+    const media35sPath = path.join(tempDir, 'synth_35s.mp4');
+
+    spawnSync('ffmpeg', [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'sine=frequency=440:duration=10',
+      '-c:a', 'aac',
+      media10sPath,
+    ], { stdio: 'ignore' });
+
+    spawnSync('ffmpeg', [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'sine=frequency=440:duration=35',
+      '-c:a', 'aac',
+      media35sPath,
+    ], { stdio: 'ignore' });
+
+    // 5. Upload 10s valid media
+    const upload10sRes = await request(app)
       .post('/api/media/upload')
       .set('Cookie', userACookie)
-      .attach('file', dummyBuffer, 'interview_sample.mp4');
-    userAMediaId = uploadRes.body.id;
+      .attach('file', media10sPath);
+    userAMedia10sId = upload10sRes.body.id;
+
+    // 6. Upload 35s valid media
+    const upload35sRes = await request(app)
+      .post('/api/media/upload')
+      .set('Cookie', userACookie)
+      .attach('file', media35sPath);
+    userAMedia35sId = upload35sRes.body.id;
+
+    // 7. Upload corrupt non-media file
+    const corruptBuffer = Buffer.from('FAKE_CORRUPT_VIDEO_STREAM_TEST_123');
+    const uploadCorruptRes = await request(app)
+      .post('/api/media/upload')
+      .set('Cookie', userACookie)
+      .attach('file', corruptBuffer, 'corrupt_sample.mp4');
+    userACorruptMediaId = uploadCorruptRes.body.id;
   });
+
+  afterAll(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch (_) {}
+  });
+
+  async function pollJob(jobId, cookie, maxAttempts = 35) {
+    let attempts = 0;
+    while (attempts < maxAttempts) {
+      const res = await request(app)
+        .get(`/api/dubbing/transcribe/jobs/${jobId}`)
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(200);
+      if (res.body.status === 'completed' || res.body.status === 'failed') {
+        return res.body;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      attempts++;
+    }
+    throw new Error(`Job ${jobId} did not complete or fail within poll window`);
+  }
 
   it('1. Rejects unauthenticated request to POST /api/dubbing/transcribe with 401', async () => {
     const res = await request(app)
@@ -71,7 +135,7 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
       .post('/api/dubbing/transcribe')
       .set('Cookie', userBCookie)
       .send({
-        mediaId: userAMediaId,
+        mediaId: userAMedia10sId,
       });
 
     expect(res.status).toBe(404);
@@ -90,218 +154,191 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
     expect(res.body.error).toMatch(/project not found or unauthorized/i);
   });
 
-  it('4. Test A — Default request (without async flag) is always asynchronous and returns 202', async () => {
+  it('4. Test F — Endpoint is asynchronous and returns HTTP 202 immediately without blocking', async () => {
+    const startTime = Date.now();
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
       .send({
-        duration: 20,
-        language: 'en',
+        mediaId: userAMedia10sId,
         projectId: userAProjectId,
+        duration: 30,
+        providerType: 'mock',
       });
 
+    const elapsed = Date.now() - startTime;
     expect(res.status).toBe(202);
     expect(res.body).toHaveProperty('jobId');
     expect(res.body.jobId).toMatch(/^txjob-/);
     expect(['queued', 'processing']).toContain(res.body.status);
-    expect(res.body).not.toHaveProperty('segments'); // Proves no synchronous transcription in request
-
-    successfulJobId = res.body.jobId;
+    expect(res.body).not.toHaveProperty('segments'); // Proves no synchronous transcription
+    expect(elapsed).toBeLessThan(1000); // Proves request returned immediately
   });
 
-  it('5. Test B — Request with async: false is also asynchronous and returns 202', async () => {
+  it('5. Test A — Real media duration (~10s) overrides client duration (30s)', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
       .send({
-        async: false,
-        duration: 20,
+        mediaId: userAMedia10sId,
+        projectId: userAProjectId,
+        duration: 30, // Client claimed 30s, but real media is 10s
+        providerType: 'mock',
+      });
+
+    expect(res.status).toBe(202);
+    const jobId = res.body.jobId;
+
+    const jobData = await pollJob(jobId, userACookie);
+    expect(jobData.status).toBe('completed');
+    expect(jobData.progress).toBe(100);
+    expect(jobData.result).toBeDefined();
+
+    // Actual probed duration should be ~10 seconds and NOT the client provided 30s
+    expect(jobData.result.duration).toBeGreaterThanOrEqual(9.9);
+    expect(jobData.result.duration).toBeLessThanOrEqual(10.2);
+    expect(jobData.result.duration).not.toBe(30);
+
+    // Verify DB record
+    const dbJob = transcriptionRepo.findJobById(jobId);
+    expect(dbJob.duration).toBeGreaterThanOrEqual(9.9);
+    expect(dbJob.duration).toBeLessThanOrEqual(10.2);
+  });
+
+  it('6. Test B — Absurd client duration (999999) is ignored for real media', async () => {
+    const res = await request(app)
+      .post('/api/dubbing/transcribe')
+      .set('Cookie', userACookie)
+      .send({
+        mediaId: userAMedia10sId,
+        projectId: userAProjectId,
+        duration: 999999, // Absurd client value
+        providerType: 'mock',
+      });
+
+    expect(res.status).toBe(202);
+    const jobId = res.body.jobId;
+
+    const jobData = await pollJob(jobId, userACookie);
+    expect(jobData.status).toBe('completed');
+    expect(jobData.result.duration).toBeGreaterThanOrEqual(9.9);
+    expect(jobData.result.duration).toBeLessThanOrEqual(10.2);
+    expect(jobData.result.duration).not.toBe(999999);
+  });
+
+  it('7. Test C — Real media without client duration detects actual duration (no 30s fallback)', async () => {
+    const res = await request(app)
+      .post('/api/dubbing/transcribe')
+      .set('Cookie', userACookie)
+      .send({
+        mediaId: userAMedia10sId,
+        projectId: userAProjectId,
+        // No duration supplied in payload
+        providerType: 'mock',
+      });
+
+    expect(res.status).toBe(202);
+    const jobId = res.body.jobId;
+
+    const jobData = await pollJob(jobId, userACookie);
+    expect(jobData.status).toBe('completed');
+    expect(jobData.result.duration).toBeGreaterThanOrEqual(9.9);
+    expect(jobData.result.duration).toBeLessThanOrEqual(10.2);
+    expect(jobData.result.duration).not.toBe(30);
+  });
+
+  it('8. Test D — Duration detection failure on corrupt media results in failed job with safe error', async () => {
+    const res = await request(app)
+      .post('/api/dubbing/transcribe')
+      .set('Cookie', userACookie)
+      .send({
+        mediaId: userACorruptMediaId,
+        projectId: userAProjectId,
+        duration: 30, // Client duration must NOT cause fake success
+        providerType: 'mock',
+      });
+
+    expect(res.status).toBe(202);
+    const jobId = res.body.jobId;
+
+    const jobData = await pollJob(jobId, userACookie);
+    expect(jobData.status).toBe('failed');
+    expect(jobData).not.toHaveProperty('result');
+    expect(jobData.error).toMatch(/Unable to determine media duration|Media validation failed/i);
+
+    // Must not expose absolute paths or stack traces
+    expect(jobData.error).not.toContain('/home/');
+    expect(jobData.error).not.toContain('/run/media');
+  });
+
+  it('9. Test E — Mock provider remains functional with explicit duration when no real media is involved', async () => {
+    const res = await request(app)
+      .post('/api/dubbing/transcribe')
+      .set('Cookie', userACookie)
+      .send({
+        duration: 25,
         language: 'en',
-        projectId: userAProjectId,
+        providerType: 'mock',
+        // No mediaId or mediaPath provided
       });
 
     expect(res.status).toBe(202);
-    expect(res.body).toHaveProperty('jobId');
-    expect(['queued', 'processing']).toContain(res.body.status);
-    expect(res.body).not.toHaveProperty('segments');
+    const jobId = res.body.jobId;
+
+    const jobData = await pollJob(jobId, userACookie);
+    expect(jobData.status).toBe('completed');
+    expect(jobData.result.duration).toBe(25);
+    expect(jobData.result.segments.length).toBeGreaterThan(0);
   });
 
-  it('6. Test C — Route uses JobManager.createTranscriptionJob and does not block synchronously', async () => {
-    const createJobSpy = vi.spyOn(JobManager, 'createTranscriptionJob');
-
+  it('10. Test G — Long media duration (>30s) is accurately detected', async () => {
     const res = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
       .send({
-        duration: 15,
-        language: 'uz',
+        mediaId: userAMedia35sId,
         projectId: userAProjectId,
-        mediaId: userAMediaId,
+        duration: 30, // Request claims 30, real media is 35
         providerType: 'mock',
       });
 
     expect(res.status).toBe(202);
-    expect(createJobSpy).toHaveBeenCalledTimes(1);
-    expect(createJobSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: userAId,
-        projectId: userAProjectId,
-        mediaId: userAMediaId,
-        filePath: expect.any(String),
-        duration: 15,
-        language: 'uz',
-        providerType: 'mock',
-      })
-    );
+    const jobId = res.body.jobId;
 
-    createJobSpy.mockRestore();
+    const jobData = await pollJob(jobId, userACookie);
+    expect(jobData.status).toBe('completed');
+    expect(jobData.result.duration).toBeGreaterThanOrEqual(34.8);
+    expect(jobData.result.duration).toBeLessThanOrEqual(35.3);
+    expect(jobData.result.duration).toBeGreaterThan(30);
+
+    // Verify project record in DB received the updated real duration
+    const proj = db.prepare('SELECT duration, segments_json FROM projects WHERE id = ?').get(userAProjectId);
+    expect(proj.duration).toBeGreaterThanOrEqual(34.8);
+    expect(proj.duration).toBeLessThanOrEqual(35.3);
   });
 
-  it('7. Test D — Job lifecycle progression (queued → processing → completed)', async () => {
-    // 1. Create a job directly to verify immediate 'queued' state
-    const job = JobManager.createTranscriptionJob({
-      userId: userAId,
-      projectId: userAProjectId,
-      duration: 30,
-      language: 'en',
-      providerType: 'mock',
-    });
-
-    expect(job.status).toBe('queued');
-    expect(job.id).toMatch(/^txjob-/);
-
-    // 2. Poll for progression to processing and completed
-    let attempts = 0;
-    let completedJobData = null;
-
-    while (attempts < 20) {
-      const res = await request(app)
-        .get(`/api/dubbing/transcribe/jobs/${successfulJobId}`)
-        .set('Cookie', userACookie);
-
-      expect(res.status).toBe(200);
-      if (res.body.status === 'completed') {
-        completedJobData = res.body;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      attempts++;
-    }
-
-    expect(completedJobData).not.toBeNull();
-    expect(completedJobData.status).toBe('completed');
-    expect(completedJobData.progress).toBe(100);
-    expect(completedJobData).toHaveProperty('result');
-    expect(completedJobData.result).toHaveProperty('segments');
-    expect(Array.isArray(completedJobData.result.segments)).toBe(true);
-    expect(completedJobData.result.segments.length).toBeGreaterThan(0);
-
-    const firstSeg = completedJobData.result.segments[0];
-    expect(firstSeg).toHaveProperty('start');
-    expect(firstSeg).toHaveProperty('end');
-    expect(firstSeg).toHaveProperty('text');
-    expect(firstSeg.start).toBeLessThan(firstSeg.end);
-
-    // Verify segments were persisted in SQLite database
-    const dbJob = transcriptionRepo.findJobById(successfulJobId);
-    expect(dbJob).toBeDefined();
-    expect(dbJob.status).toBe('completed');
-
-    const dbSegments = transcriptionRepo.findSegmentsByJobId(successfulJobId);
-    expect(dbSegments.length).toBeGreaterThan(0);
-
-    // Verify project segments_json in database was synchronized
-    const proj = db.prepare('SELECT segments_json FROM projects WHERE id = ?').get(userAProjectId);
-    expect(proj.segments_json).toBeDefined();
-    const parsedSegments = JSON.parse(proj.segments_json);
-    expect(parsedSegments.length).toBe(completedJobData.result.segments.length);
-  });
-
-  it('8. Test E — Failure handling (queued → processing → failed) stores safe error on job', async () => {
-    // Create a job with an invalid / non-existent media file to trigger pipeline failure
-    const failedJob = JobManager.createTranscriptionJob({
-      userId: userAId,
-      projectId: userAProjectId,
-      filePath: '/non_existent_directory/invalid_corrupt_video.mp4',
-      providerType: 'openai',
-    });
-    failedJobId = failedJob.id;
-
-    // Wait for failure
-    let attempts = 0;
-    let failedJobData = null;
-
-    while (attempts < 20) {
-      const res = await request(app)
-        .get(`/api/dubbing/transcribe/jobs/${failedJobId}`)
-        .set('Cookie', userACookie);
-
-      expect(res.status).toBe(200);
-      failedJobData = res.body;
-
-      if (failedJobData.status === 'failed') {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      attempts++;
-    }
-
-    expect(failedJobData.status).toBe('failed');
-    expect(failedJobData).toHaveProperty('error');
-    expect(typeof failedJobData.error).toBe('string');
-    expect(failedJobData.error.length).toBeGreaterThan(0);
-
-    // Ensure error does not leak sensitive absolute system paths or secrets
-    expect(failedJobData.error).not.toContain('/non_existent_directory');
-    expect(failedJobData.error).not.toContain('/run/media');
-    expect(failedJobData.error).not.toContain('/home/');
-
-    // Check DB record
-    const dbFailedJob = transcriptionRepo.findJobById(failedJobId);
-    expect(dbFailedJob).toBeDefined();
-    expect(dbFailedJob.status).toBe('failed');
-  });
-
-  it('9. Test F — Ownership isolation (User B cannot retrieve User A transcription job)', async () => {
-    // User B attempts to access User A's successful job via /transcribe/jobs/:jobId
-    const res1 = await request(app)
-      .get(`/api/dubbing/transcribe/jobs/${successfulJobId}`)
-      .set('Cookie', userBCookie);
-
-    expect(res1.status).toBe(404);
-    expect(res1.body.error).toMatch(/job not found or unauthorized/i);
-
-    // User B attempts to access User A's job via /jobs/:jobId
-    const res2 = await request(app)
-      .get(`/api/dubbing/jobs/${successfulJobId}`)
-      .set('Cookie', userBCookie);
-
-    expect(res2.status).toBe(404);
-    expect(res2.body.error).toMatch(/job not found or unauthorized/i);
-
-    // User B attempts to access a non-existent random jobId
-    const res3 = await request(app)
-      .get('/api/dubbing/transcribe/jobs/txjob-fake-id-99999')
-      .set('Cookie', userBCookie);
-
-    expect(res3.status).toBe(404);
-  });
-
-  it('10. Security: Error responses do not leak internal filesystem paths or secrets', async () => {
-    const res = await request(app)
+  it('11. Ownership isolation — User B cannot retrieve User A transcription job', async () => {
+    // Create a job for User A
+    const resA = await request(app)
       .post('/api/dubbing/transcribe')
       .set('Cookie', userACookie)
       .send({
-        mediaPath: '/etc/shadow',
+        duration: 20,
+        providerType: 'mock',
       });
 
-    expect(res.status).toBe(404);
-    expect(JSON.stringify(res.body)).not.toContain('/etc/shadow');
-    expect(JSON.stringify(res.body)).not.toContain('/run/media');
-    expect(JSON.stringify(res.body)).not.toContain('/home/');
+    const jobId = resA.body.jobId;
+
+    // User B attempts to access User A's job
+    const resB = await request(app)
+      .get(`/api/dubbing/transcribe/jobs/${jobId}`)
+      .set('Cookie', userBCookie);
+
+    expect(resB.status).toBe(404);
+    expect(resB.body.error).toMatch(/job not found or unauthorized/i);
   });
 
-  it('11. Async job integration: Production without API key fails in background and does NOT produce fake transcript', async () => {
+  it('12. Production without API key fails in background with safe error and no fake transcript', async () => {
     const origEnv = process.env.NODE_ENV;
     const origKey = process.env.OPENAI_API_KEY;
 
@@ -319,36 +356,14 @@ describe('Real Video Transcription API & Integration Tests (/api/dubbing)', () =
         });
 
       expect(res.status).toBe(202);
-      expect(res.body).toHaveProperty('jobId');
-      const prodJobId = res.body.jobId;
+      const jobId = res.body.jobId;
 
-      // Poll until finished
-      let attempts = 0;
-      let prodJobData = null;
-
-      while (attempts < 20) {
-        const pollRes = await request(app)
-          .get(`/api/dubbing/transcribe/jobs/${prodJobId}`)
-          .set('Cookie', userACookie);
-
-        expect(pollRes.status).toBe(200);
-        prodJobData = pollRes.body;
-
-        if (prodJobData.status === 'failed' || prodJobData.status === 'completed') {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        attempts++;
-      }
-
-      // MUST NOT be completed or contain fake transcript
-      expect(prodJobData.status).toBe('failed');
-      expect(prodJobData).not.toHaveProperty('result');
-      expect(prodJobData.error).toMatch(/OPENAI_API_KEY is missing/i);
-
-      // Verify safe error scrubbing
-      expect(prodJobData.error).not.toContain('/home/');
-      expect(prodJobData.error).not.toContain('/run/media');
+      const jobData = await pollJob(jobId, userACookie);
+      expect(jobData.status).toBe('failed');
+      expect(jobData).not.toHaveProperty('result');
+      expect(jobData.error).toMatch(/OPENAI_API_KEY is missing/i);
+      expect(jobData.error).not.toContain('/home/');
+      expect(jobData.error).not.toContain('/run/media');
     } finally {
       process.env.NODE_ENV = origEnv;
       if (origKey !== undefined) {

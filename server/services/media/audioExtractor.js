@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
+export { getMediaDuration } from './durationDetector.js';
 
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 const DEFAULT_TIMEOUT_MS = parseInt(process.env.FFMPEG_TIMEOUT_MS || '60000', 10);

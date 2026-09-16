@@ -1,5 +1,6 @@
 import { validateMediaFile } from '../media/mediaValidator.js';
 import { extractAudioFromMedia, cleanupTempFile } from '../media/audioExtractor.js';
+import { getMediaDuration } from '../media/durationDetector.js';
 import { TranscriptionProviderFactory } from '../transcription/transcriptionProvider.js';
 import { logEvent } from '../logger.js';
 
@@ -8,22 +9,23 @@ import { logEvent } from '../logger.js';
  *
  * Pipeline:
  * 1. Validate media file
- * 2. Extract & normalize audio with FFmpeg (16kHz mono WAV)
- * 3. Transcribe via provider abstraction (OpenAI Whisper / fallback)
- * 4. Normalize & timestamp segments
- * 5. Clean up temporary audio files
+ * 2. Detect actual media duration from file (FFprobe / FFmpeg)
+ * 3. Extract & normalize audio with FFmpeg (16kHz mono WAV)
+ * 4. Transcribe via provider abstraction (OpenAI Whisper / fallback)
+ * 5. Normalize & timestamp segments
+ * 6. Clean up temporary audio files
  *
  * @param {Object} options
- * @param {string} options.filePath - Path to local video or audio file
+ * @param {string} [options.filePath] - Path to local video or audio file
  * @param {string} [options.language='en'] - Spoken language
- * @param {number} [options.duration=30] - Expected duration in seconds
+ * @param {number} [options.duration] - Client provided or fallback duration in seconds
  * @param {string} [options.providerType='auto'] - Provider type ('auto', 'openai', 'mock')
  * @param {string} [options.jobId] - Optional tracking job ID
  * @returns {Promise<Array<Object>>}
  */
 export async function transcribeAudio({
   filePath,
-  duration = 30,
+  duration,
   language = 'en',
   providerType = 'auto',
   jobId = null,
@@ -31,7 +33,7 @@ export async function transcribeAudio({
   // If no file path provided, resolve provider according to providerType and environment
   if (!filePath) {
     const provider = TranscriptionProviderFactory.getProvider({ type: providerType });
-    const result = await provider.transcribe({ duration, language });
+    const result = await provider.transcribe({ duration: duration || 30, language });
     return result.segments;
   }
 
@@ -41,13 +43,16 @@ export async function transcribeAudio({
     throw new Error(`Media validation failed: ${validation.error}`);
   }
 
+  // 2. Detect Real Media Duration (server source of truth)
+  const actualDuration = await getMediaDuration(filePath);
+
   let audioPathToClean = null;
   let targetAudioPath = filePath;
 
   try {
-    // 2. Extract & normalize audio using FFmpeg if input is video or needs audio extraction
+    // 3. Extract & normalize audio using FFmpeg if input is video or needs audio extraction
     const startTime = Date.now();
-    logEvent('audio_extraction_started', { jobId, inputPath: filePath, format: validation.detectedFormat });
+    logEvent('audio_extraction_started', { jobId, inputPath: filePath, format: validation.detectedFormat, duration: actualDuration });
 
     try {
       const extractionResult = await extractAudioFromMedia({ inputFilePath: filePath });
@@ -71,27 +76,29 @@ export async function transcribeAudio({
       }
     }
 
-    // 3. Transcribe with Provider Abstraction
+    // 4. Transcribe with Provider Abstraction using real detected duration
     const provider = TranscriptionProviderFactory.getProvider({ type: providerType });
     logEvent('transcription_started', {
       jobId,
       provider: provider.constructor.name,
       language,
+      duration: actualDuration,
     });
 
     const result = await provider.transcribe({
       audioFilePath: targetAudioPath,
       language,
-      duration,
+      duration: actualDuration,
     });
 
     logEvent('transcription_completed', {
       jobId,
       segmentCount: result.segments.length,
-      duration: result.duration,
+      duration: actualDuration,
       language: result.language,
     });
 
+    result.segments.duration = actualDuration;
     return result.segments;
   } catch (err) {
     logEvent('transcription_failed', {

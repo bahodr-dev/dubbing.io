@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { transcribeAudio } from './ai/transcription.js';
 import { translateSegments } from './ai/translation.js';
 import { synthesizeSpeech } from './ai/tts.js';
+import { getMediaDuration } from './media/durationDetector.js';
 import { db } from '../db.js';
 import * as transcriptionRepo from '../repositories/transcriptionRepository.js';
 import { logEvent } from './logger.js';
@@ -40,7 +41,7 @@ export class JobManager {
       mediaId,
       status: 'queued',
       language,
-      duration,
+      duration: duration || 0,
     });
 
     const job = {
@@ -54,6 +55,7 @@ export class JobManager {
       progress: 10,
       currentStage: 'Queued for transcription...',
       language,
+      duration: duration || 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -87,13 +89,23 @@ export class JobManager {
       job.updatedAt = new Date().toISOString();
       transcriptionRepo.updateJobStatus(id, 'processing');
 
+      // Real media duration detection (server source of truth)
+      let mediaDuration = duration || 30;
+      if (filePath) {
+        mediaDuration = await getMediaDuration(filePath);
+        job.duration = mediaDuration;
+      }
+
       const segments = await transcribeAudio({
         filePath,
-        duration,
+        duration: mediaDuration,
         language,
         providerType,
         jobId: id,
       });
+
+      const finalDuration = (segments && typeof segments.duration === 'number') ? segments.duration : mediaDuration;
+      job.duration = finalDuration;
 
       job.progress = 90;
       job.currentStage = 'Normalizing and persisting dialogue segments...';
@@ -102,14 +114,14 @@ export class JobManager {
       // Save segments to database
       transcriptionRepo.saveTranscriptSegments(id, job.projectId, segments);
 
-      // If tied to a project, also update the project's segments_json
+      // If tied to a project, also update the project's segments_json and duration
       if (job.projectId) {
         try {
           db.prepare(`
             UPDATE projects
-            SET segments_json = ?, updated_at = CURRENT_TIMESTAMP
+            SET segments_json = ?, duration = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND user_id = ?
-          `).run(JSON.stringify(segments), job.projectId, job.userId);
+          `).run(JSON.stringify(segments), finalDuration, job.projectId, job.userId);
         } catch (dbErr) {
           console.warn('[JobManager] Could not update project segments_json:', dbErr);
         }
@@ -122,11 +134,12 @@ export class JobManager {
         segments,
         segmentCount: segments.length,
         language,
+        duration: finalDuration,
       };
       job.segments = segments;
       job.updatedAt = new Date().toISOString();
 
-      transcriptionRepo.updateJobStatus(id, 'completed', { language, duration });
+      transcriptionRepo.updateJobStatus(id, 'completed', { language, duration: finalDuration });
     } catch (err) {
       const safeError = sanitizeError(err);
       job.status = 'failed';
