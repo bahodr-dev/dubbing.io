@@ -78,20 +78,17 @@ export function creditSubscription(userId, { plan = 'creator', minutesToAdd = 60
   const user = findById(userId);
   if (!user) return null;
 
-  const currentBalance = typeof user.minutes_balance === 'number' ? user.minutes_balance : 5.0;
-  const newBalance = currentBalance + minutesToAdd;
-
   const expiresDate = new Date();
   expiresDate.setDate(expiresDate.getDate() + durationDays);
 
   db.prepare(`
     UPDATE users
     SET plan = ?,
-        minutes_balance = ?,
+        minutes_balance = ROUND(COALESCE(minutes_balance, 0) + ?, 6),
         subscription_expires_at = ?,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(plan, newBalance, expiresDate.toISOString(), userId);
+  `).run(plan, minutesToAdd, expiresDate.toISOString(), userId);
 
   return findById(userId);
 }

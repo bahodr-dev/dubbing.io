@@ -37,8 +37,8 @@ export function playVoiceSample(
 
   const textToSpeak = options.sampleText || (
     options.languageCode === 'uz' 
-      ? `Assalomu alaykum, men ${voiceName}. dubbing.io orqali videolaringiz mukammal jaranglaydi.`
-      : `Hello, I'm ${voiceName}. dubbing.io makes your content speak to the world with natural cadence.`
+      ? `Assalomu alaykum, men ${voiceName}. dubla.uz orqali videolaringiz mukammal jaranglaydi.`
+      : `Hello, I'm ${voiceName}. dubla.uz makes your content speak to the world with natural cadence.`
   );
 
   let hasSpokenWithWebSpeech = false;

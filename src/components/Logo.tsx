@@ -14,7 +14,7 @@ export const Logo: React.FC<LogoProps> = ({
   return (
     <img
       src="/logo.png"
-      alt="dubbing.io logo"
+      alt="dubla.uz logo"
       width={size}
       height={size}
       className={className}

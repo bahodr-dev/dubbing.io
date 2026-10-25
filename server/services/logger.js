@@ -1,10 +1,12 @@
 /**
- * Structured, security-sanitized logger for Dubbing.io pipeline
+ * Structured, security-sanitized logger for dubla.uz pipeline
  */
 
 const SENSITIVE_KEYS = new Set([
   'apikey', 'api_key', 'authorization', 'cookie', 'cookies',
-  'password', 'secret', 'jwt_secret', 'token', 'access_token'
+  'password', 'secret', 'jwt_secret', 'token', 'access_token',
+  'transcript', 'segments', 'mediaurl', 'media_url', 'inputpath',
+  'audiopath', 'filepath', 'storagepath'
 ]);
 
 /**

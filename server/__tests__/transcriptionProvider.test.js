@@ -92,9 +92,9 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
         json: async () => ({
           language: 'english',
           duration: 12.5,
-          text: 'Welcome to Dubbing.io. This is automated transcription.',
+          text: 'Welcome to dubla.uz. This is automated transcription.',
           segments: [
-            { id: 0, start: 0.0, end: 4.2, text: 'Welcome to Dubbing.io.' },
+            { id: 0, start: 0.0, end: 4.2, text: 'Welcome to dubla.uz.' },
             { id: 1, start: 4.5, end: 12.5, text: 'This is automated transcription.' },
           ],
         }),
@@ -103,16 +103,49 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
 
     const provider = new OpenAITranscriptionProvider({
       apiKey: 'sk-test-mock-key',
+      model: 'whisper-1',
       fetchClient: mockFetch,
     });
 
     const result = await provider.transcribe({ audioFilePath: dummyAudioPath, language: 'en' });
 
     expect(result.segmentCount).toBe(2);
-    expect(result.segments[0].text).toBe('Welcome to Dubbing.io.');
+    expect(result.segments[0].text).toBe('Welcome to dubla.uz.');
     expect(result.segments[0].start).toBe(0.0);
     expect(result.segments[0].end).toBe(4.2);
     expect(result.segments[1].text).toBe('This is automated transcription.');
+  });
+
+  it('uses diarized transcription and keeps speaker identities stable across turns', async () => {
+    let requestBody;
+    const provider = new OpenAITranscriptionProvider({
+      apiKey: 'sk-test-mock-key',
+      model: 'gpt-4o-transcribe-diarize',
+      fetchClient: async (_url, options) => {
+        requestBody = options.body;
+        return {
+          ok: true,
+          json: async () => ({
+            duration: 6,
+            segments: [
+              { start: 0, end: 2, text: 'First', speaker: 'A' },
+              { start: 2, end: 4, text: 'Second', speaker: 'B' },
+              { start: 4, end: 6, text: 'First again', speaker: 'A' },
+            ],
+          }),
+        };
+      },
+    });
+
+    const result = await provider.transcribe({ audioFilePath: dummyAudioPath, language: 'en' });
+
+    expect(requestBody.get('model')).toBe('gpt-4o-transcribe-diarize');
+    expect(requestBody.get('response_format')).toBe('diarized_json');
+    expect(requestBody.get('chunking_strategy')).toBe('auto');
+    expect(result.segments.map((segment) => segment.speaker)).toEqual([
+      'Speaker 1', 'Speaker 2', 'Speaker 1',
+    ]);
+    expect(result.segments.every((segment) => segment.speakerSource === 'diarization')).toBe(true);
   });
 
   it('8. OpenAITranscriptionProvider handles 401 Unauthorized securely without leaking key', async () => {

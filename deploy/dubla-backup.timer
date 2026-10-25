@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly dubla.uz backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Tashkent
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target

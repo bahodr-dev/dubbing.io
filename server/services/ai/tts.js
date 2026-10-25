@@ -18,21 +18,44 @@ export const VOICE_PROVIDER_MAP = {
 
 import { createMediaAsset } from '../../repositories/mediaRepository.js';
 
+export function hasConfiguredTtsProvider() {
+  return Boolean(process.env.ELEVENLABS_API_KEY || process.env.OPENAI_API_KEY);
+}
+
+export function getRenderableVoiceIds() {
+  return Object.keys(VOICE_PROVIDER_MAP);
+}
+
+export function isRenderableVoiceId(voiceId) {
+  return typeof voiceId === 'string' && Object.hasOwn(VOICE_PROVIDER_MAP, voiceId);
+}
+
 export async function synthesizeSpeech({
   text,
   voiceId = 'voice-farrux',
+  elevenLabsVoiceId = null,
   speed = 1.0,
   userId = null,
+  registerAsset = true,
 } = {}) {
   const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
-  const mapping = VOICE_PROVIDER_MAP[voiceId] || VOICE_PROVIDER_MAP['voice-farrux'];
+  if (elevenLabsVoiceId && (!elevenLabsKey || !/^[a-zA-Z0-9_-]+$/.test(elevenLabsVoiceId))) {
+    throw new Error('A valid ElevenLabs voice and API key are required for cloned speech.');
+  }
+  if (!elevenLabsVoiceId && typeof voiceId === 'string' && voiceId.startsWith('voice-custom-')) {
+    throw new Error('Custom voice profiles cannot synthesize audio until a trained provider voice is connected.');
+  }
+  if (!elevenLabsVoiceId && !isRenderableVoiceId(voiceId)) {
+    throw new Error('The selected voice is not connected to a speech provider. Choose an available voice.');
+  }
+  const mapping = elevenLabsVoiceId ? { elevenLabsId: elevenLabsVoiceId } : VOICE_PROVIDER_MAP[voiceId];
 
   const outFileName = `tts-${Date.now()}-${randomUUID().slice(0, 8)}.mp3`;
   const outFilePath = path.join(uploadsDir, outFileName);
 
   const registerMediaUrl = (bufferLength) => {
-    if (userId) {
+    if (userId && registerAsset) {
       const asset = createMediaAsset({
         userId,
         originalFilename: `tts-${Date.now()}.mp3`,
@@ -76,11 +99,15 @@ export async function synthesizeSpeech({
         const audioUrl = registerMediaUrl(buf.length);
         return {
           audioUrl,
+          filePath: outFilePath,
+          storedFilename: outFileName,
           durationEstimate: Math.max(2, text.split(' ').length * 0.4),
           provider: 'ElevenLabs Neural Multilingual v2',
         };
       }
+      if (elevenLabsVoiceId) throw new Error(`Cloned voice synthesis failed (${response.status}).`);
     } catch (err) {
+      if (elevenLabsVoiceId) throw err;
       console.warn('[ElevenLabs API] Error:', err);
     }
   }
@@ -109,6 +136,8 @@ export async function synthesizeSpeech({
         const audioUrl = registerMediaUrl(buf.length);
         return {
           audioUrl,
+          filePath: outFilePath,
+          storedFilename: outFileName,
           durationEstimate: Math.max(2, text.split(' ').length * 0.4),
           provider: 'OpenAI TTS HD',
         };
@@ -121,6 +150,8 @@ export async function synthesizeSpeech({
   // 3. Fallback: simulated acoustic preview with Web Speech playback reference
   return {
     audioUrl: '',
+    filePath: null,
+    storedFilename: null,
     durationEstimate: Math.max(2, (text || '').split(' ').length * 0.4),
     provider: 'Client-Side Neural Web Speech Synthesizer',
   };

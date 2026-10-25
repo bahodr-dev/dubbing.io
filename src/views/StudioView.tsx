@@ -11,45 +11,54 @@ import { Download, Sparkles, ArrowLeft, FileText } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import { Logo } from '../components/Logo';
+import { truncateProjectTitle } from '../utils/formatters';
 
 interface StudioViewProps {
   project?: Project;
   projects?: Project[];
   onUpdateProject?: (updated: Project) => void;
+  onSettingsSaved?: (projectId: string, patch: Partial<Project>) => void;
   onBackToDashboard?: () => void;
   onOpenNewDub?: () => void;
+  onMinutesBalanceChange?: (minutesBalance: number) => void;
 }
+
+const formatSrtTime = (seconds: number): string => {
+  const totalMilliseconds = Math.round(Math.max(0, Number.isFinite(seconds) ? seconds : 0) * 1000);
+  const hours = Math.floor(totalMilliseconds / 3_600_000);
+  const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000);
+  const remainingSeconds = Math.floor((totalMilliseconds % 60_000) / 1000);
+  const milliseconds = totalMilliseconds % 1000;
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+};
 
 export const StudioView: React.FC<StudioViewProps> = ({
   project: initialProject,
   projects = [],
   onUpdateProject,
+  onSettingsSaved,
   onBackToDashboard,
   onOpenNewDub,
+  onMinutesBalanceChange,
 }) => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
 
-  const [project, setProject] = useState<Project | null>(() => {
-    if (initialProject) return initialProject;
-    if (projectId && projects.length > 0) {
-      return projects.find((p) => p.id === projectId) || null;
-    }
-    return projects[0] || null;
-  });
+  const targetProject = initialProject || (projectId && projects.length > 0 ? projects.find((p) => p.id === projectId) || null : projects[0] || null);
+  const [project, setProject] = useState<Project | null>(targetProject);
+  const [prevTargetId, setPrevTargetId] = useState(targetProject?.id);
 
-  useEffect(() => {
-    if (initialProject) {
-      setProject(initialProject);
-    } else if (projectId && projects.length > 0) {
-      const found = projects.find((p) => p.id === projectId);
-      if (found) setProject(found);
-    }
-  }, [initialProject, projectId, projects]);
+  if (targetProject && targetProject.id !== prevTargetId) {
+    setPrevTargetId(targetProject.id);
+    setProject(targetProject);
+  }
 
   const [isProcessing, setIsProcessing] = useState(project?.status === 'processing');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [currentTranscriptionJobId, setCurrentTranscriptionJobId] = useState<string | null>(null);
+  const [transcriptionPollVersion, setTranscriptionPollVersion] = useState(0);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [targetSpeakerForVoiceModal, setTargetSpeakerForVoiceModal] = useState<string | null>(null);
   const [activeAudioTrack, setActiveAudioTrack] = useState<'original' | 'dubbed'>(
@@ -58,8 +67,128 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [currentPlayTime, setCurrentPlayTime] = useState<number>(0);
   const [seekTime, setSeekTime] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [canRenderFinalDub, setCanRenderFinalDub] = useState<boolean | null>(null);
+  const [canCloneVoices, setCanCloneVoices] = useState<boolean | null>(null);
+  const [autoCloneVoices, setAutoCloneVoices] = useState(true);
+  const [voiceCloningConsent, setVoiceCloningConsent] = useState(false);
+  const [renderableVoiceIds, setRenderableVoiceIds] = useState<string[] | null>(null);
+  const [isSettingsSaving, setIsSettingsSaving] = useState(false);
 
   const isStartingProcessRef = useRef(false);
+  const settingsSaveInFlightRef = useRef(false);
+  const onUpdateProjectRef = useRef(onUpdateProject);
+
+  useEffect(() => {
+    onUpdateProjectRef.current = onUpdateProject;
+  }, [onUpdateProject]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.dubbing.getCapabilities()
+      .then((capabilities) => {
+        if (!cancelled) {
+          setCanRenderFinalDub(capabilities.canRenderFinalDub);
+          setCanCloneVoices(capabilities.canCloneVoices);
+          if (Array.isArray(capabilities.renderableVoiceIds)) {
+            setRenderableVoiceIds(capabilities.renderableVoiceIds);
+          }
+        }
+      })
+      .catch(() => {
+        // The server still validates at process-start; do not hide the action
+        // merely because an optional capability check could not be read.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (project?.status !== 'processing' || currentJobId) return;
+
+    let cancelled = false;
+    api.dubbing.getLatestProjectJob(project.id)
+      .then((response) => {
+        if (!cancelled && response?.jobId) {
+          setCurrentJobId(response.jobId);
+          setIsProcessing(true);
+        }
+      })
+      .catch(() => {
+        // A project may briefly be marked processing before its job row is
+        // created. The normal start flow supplies the id once it exists.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id, project?.status, currentJobId]);
+
+  useEffect(() => {
+    if (!project?.id || project.transcript.length > 0) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lookupAttempts = 0;
+
+    const pollTranscription = async () => {
+      if (cancelled) return;
+      try {
+        const response = await api.dubbing.getLatestProjectTranscriptionJob(project.id);
+        if (cancelled) return;
+        const transcriptionJob = response.job;
+        setCurrentTranscriptionJobId(response.jobId);
+
+        if (transcriptionJob.status === 'completed' && Array.isArray(transcriptionJob.result?.segments)) {
+          const segments = transcriptionJob.result.segments;
+          const detectedDuration = transcriptionJob.result.duration;
+          setProject((current) => {
+            if (!current) return current;
+            const updated = {
+              ...current,
+              transcript: segments,
+              duration: detectedDuration || current.duration,
+              updatedAt: new Date().toISOString(),
+            };
+            onUpdateProjectRef.current?.(updated);
+            return updated;
+          });
+          setSaveStatus('saved');
+          return;
+        }
+
+        if (transcriptionJob.status === 'failed') {
+          setSaveStatus('error');
+          showError(transcriptionJob.error || 'Video transcription failed.');
+          return;
+        }
+
+        setSaveStatus('saving');
+        timer = setTimeout(pollTranscription, 1500);
+      } catch {
+        lookupAttempts += 1;
+        if (!cancelled && lookupAttempts < 8) {
+          timer = setTimeout(pollTranscription, 1000);
+        }
+      }
+    };
+
+    pollTranscription();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [project?.id, project?.transcript.length, showError, transcriptionPollVersion]);
+
+  const handleRetryTranscription = async () => {
+    if (!currentTranscriptionJobId) return;
+    try {
+      await api.dubbing.retryTranscriptionJob(currentTranscriptionJobId);
+      setSaveStatus('saving');
+      setTranscriptionPollVersion((version) => version + 1);
+      showSuccess('Transcription retry started.');
+    } catch (err: any) {
+      showError(err.message || 'Failed to retry transcription.');
+    }
+  };
 
   const handleBack = () => {
     if (onBackToDashboard) {
@@ -74,7 +203,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       <div style={{ backgroundColor: 'var(--c-white)', minHeight: 'calc(100vh - 68px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
         <div style={{ textAlign: 'center', maxWidth: '400px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '8px' }}>Project Not Found</h2>
-          <p style={{ fontSize: '14px', color: 'var(--black-60)', marginBottom: '20px' }}>The requested dubbing studio project could not be found or has been removed.</p>
+          <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginBottom: '20px' }}>The requested dubbing studio project could not be found or has been removed.</p>
           <button onClick={handleBack} className="btn btn-primary">
             <ArrowLeft size={16} style={{ marginRight: '8px' }} />
             Back to Dashboard
@@ -86,58 +215,78 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
   const currentVoice = VOICES.find(v => v.id === project.voiceId) || VOICES[1];
 
+  const saveSettings = async (patch: Partial<Project>, successMessage: string) => {
+    if (settingsSaveInFlightRef.current) return;
+    settingsSaveInFlightRef.current = true;
+    setIsSettingsSaving(true);
+    try {
+      await api.projects.update(project.id, patch);
+      const savedPatch = { ...patch, updatedAt: new Date().toISOString() };
+      setProject((current) => current?.id === project.id ? { ...current, ...savedPatch } : current);
+      onSettingsSaved?.(project.id, savedPatch);
+      showSuccess(successMessage);
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Could not save studio settings.');
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setIsSettingsSaving(false);
+    }
+  };
+
   const handleSelectVoice = (voice: Voice) => {
     if (targetSpeakerForVoiceModal) {
       const updatedSpeakerVoices = {
         ...(project.speakerVoices || {}),
         [targetSpeakerForVoiceModal]: voice.id,
       };
-      const updated = {
-        ...project,
-        speakerVoices: updatedSpeakerVoices,
-        updatedAt: new Date().toISOString(),
-      };
-      setProject(updated);
-      if (onUpdateProject) onUpdateProject(updated);
-      api.projects.update(project.id, { speakerVoices: updatedSpeakerVoices }).catch(() => {});
-      showSuccess(`Voice for ${targetSpeakerForVoiceModal} set to ${voice.name}`);
+      void saveSettings(
+        { speakerVoices: updatedSpeakerVoices },
+        `Voice for ${targetSpeakerForVoiceModal} set to ${voice.name}`,
+      );
       setTargetSpeakerForVoiceModal(null);
     } else {
-      const updated = {
-        ...project,
-        voiceId: voice.id,
-        updatedAt: new Date().toISOString(),
-      };
-      setProject(updated);
-      if (onUpdateProject) onUpdateProject(updated);
-      api.projects.update(project.id, { voiceId: voice.id }).catch(() => {});
-      showSuccess(`Voice changed to ${voice.name}`);
+      void saveSettings({ voiceId: voice.id }, `Voice changed to ${voice.name}`);
     }
   };
 
   const handleLanguageChange = (field: 'originalLanguage' | 'targetLanguage', value: string) => {
+    if (settingsSaveInFlightRef.current || project[field] === value) return;
     let newVoiceId = project.voiceId;
     if (field === 'targetLanguage') {
       const matchVoice = VOICES.find(v => v.languageCode === value);
       if (matchVoice) newVoiceId = matchVoice.id;
     }
 
-    const updated = {
-      ...project,
-      [field]: value,
-      voiceId: newVoiceId,
-      updatedAt: new Date().toISOString(),
-    };
-    setProject(updated);
-    if (onUpdateProject) onUpdateProject(updated);
-    api.projects.update(project.id, { [field]: value, voiceId: newVoiceId }).catch(() => {});
+    void saveSettings({ [field]: value, voiceId: newVoiceId }, 'Language settings saved.');
   };
 
   const handleStartGeneration = async () => {
-    if (isProcessing || isStartingProcessRef.current) return;
+    if (isProcessing || isStartingProcessRef.current || saveStatus === 'saving' || settingsSaveInFlightRef.current) return;
+    if (autoCloneVoices && !voiceCloningConsent) {
+      showError('Confirm that every speaker has permitted voice cloning before starting.');
+      return;
+    }
+    if (autoCloneVoices && project.transcript.some((segment) => !segment.speaker || segment.speakerSource !== 'diarization')) {
+      showError('Re-transcribe this video to identify every speaker before automatic voice cloning.');
+      return;
+    }
     isStartingProcessRef.current = true;
+    let savingTranscript = false;
 
     try {
+      await api.projects.update(project.id, {
+        voiceId: project.voiceId,
+        speakerVoices: project.speakerVoices || {},
+        originalLanguage: project.originalLanguage,
+        targetLanguage: project.targetLanguage,
+      });
+      if (project.transcript.length > 0) {
+        savingTranscript = true;
+        setSaveStatus('saving');
+        await api.projects.updateTranscript(project.id, project.transcript);
+        savingTranscript = false;
+        setSaveStatus('saved');
+      }
       setIsProcessing(true);
       const updated = {
         ...project,
@@ -153,13 +302,19 @@ export const StudioView: React.FC<StudioViewProps> = ({
         originalLanguage: project.originalLanguage,
         targetLanguage: project.targetLanguage,
         voiceId: project.voiceId,
+        autoCloneVoices,
+        voiceCloningConsent: autoCloneVoices && voiceCloningConsent,
         duration: project.duration,
       });
 
       if (res?.jobId) {
         setCurrentJobId(res.jobId);
       }
+      if (typeof res?.minutesBalance === 'number') {
+        onMinutesBalanceChange?.(res.minutesBalance);
+      }
     } catch (err: any) {
+      if (savingTranscript) setSaveStatus('error');
       console.error('Failed to start dubbing pipeline:', err);
       showError(err.message || 'Failed to start dubbing job.');
       setIsProcessing(false);
@@ -187,6 +342,10 @@ export const StudioView: React.FC<StudioViewProps> = ({
       ...project,
       transcript: updatedTranscript,
       audioUrl: result?.audioUrl || project.audioUrl,
+      dubbedAudioUrl: result?.audioUrl || project.dubbedAudioUrl,
+      dubbedVideoUrl: result?.videoUrl || project.dubbedVideoUrl,
+      outputMediaId: result?.videoMediaId || project.outputMediaId,
+      outputAudioMediaId: result?.audioMediaId || project.outputAudioMediaId,
       status: 'completed' as const,
       updatedAt: new Date().toISOString(),
     };
@@ -197,10 +356,41 @@ export const StudioView: React.FC<StudioViewProps> = ({
     showSuccess('AI Dubbing completed successfully!');
   };
 
+  const handleRetryGeneration = async () => {
+    if (!currentJobId) {
+      throw new Error('The failed dubbing job could not be identified.');
+    }
+
+    try {
+      const response = await api.dubbing.retryJob(currentJobId);
+      if (typeof response.minutesBalance === 'number') {
+        onMinutesBalanceChange?.(response.minutesBalance);
+      }
+      const updated = {
+        ...project,
+        status: 'processing' as const,
+        updatedAt: new Date().toISOString(),
+      };
+      setProject(updated);
+      if (onUpdateProject) onUpdateProject(updated);
+      showSuccess('Dubbing retry started.');
+    } catch (err: any) {
+      showError(err.message || 'Failed to retry dubbing job.');
+      throw err;
+    }
+  };
+
   const handleUpdateSegment = (segmentId: string, originalText: string, translatedText: string) => {
     setSaveStatus('saving');
     const updatedTranscript = project.transcript.map(seg => 
-      seg.id === segmentId ? { ...seg, originalText, translatedText } : seg
+      seg.id === segmentId ? {
+        ...seg,
+        originalText,
+        translatedText,
+        translationEdited: translatedText !== seg.translatedText
+          ? true
+          : originalText !== seg.originalText ? false : seg.translationEdited,
+      } : seg
     );
     const updated = {
       ...project,
@@ -227,12 +417,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
       try {
         await api.dubbing.downloadSubtitles(project.id, 'srt');
         showSuccess('Subtitles exported (.SRT)');
-      } catch (_) {
+      } catch {
         // fallback to generating client-side SRT
         try {
           let srtContent = '';
           project.transcript.forEach((seg, idx) => {
-            srtContent += `${idx + 1}\n00:00:0${Math.floor(seg.startTime)},000 --> 00:00:0${Math.floor(seg.endTime)},000\n${seg.translatedText}\n\n`;
+            srtContent += `${idx + 1}\n${formatSrtTime(seg.startTime)} --> ${formatSrtTime(seg.endTime)}\n${seg.translatedText || seg.originalText}\n\n`;
           });
           const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
           const url = URL.createObjectURL(blob);
@@ -246,19 +436,36 @@ export const StudioView: React.FC<StudioViewProps> = ({
         }
       }
     } else if (format === 'video') {
-      if (project.videoUrl && project.videoUrl.startsWith('http')) {
-        window.open(project.videoUrl, '_blank');
+      if (!project.outputMediaId || !project.dubbedVideoUrl) {
+        showError('Dubbed video export is not available yet. Attach and process a video first.');
+        return;
       }
-      showSuccess('Master dubbed video exported (MP4)');
+      try {
+        await api.media.download(project.outputMediaId, `${project.title.replace(/\s+/g, '_')}_dubbed.mp4`);
+        showSuccess('Master dubbed video exported (MP4)');
+      } catch (error) {
+        showError(error instanceof Error ? error.message : 'Failed to download dubbed video.');
+      }
     } else {
-      showSuccess('Master audio exported (WAV)');
+      if (!project.outputAudioMediaId || !project.audioUrl) {
+        showError('Dubbed audio export is not available yet. Generate a dub first.');
+        return;
+      }
+      try {
+        await api.media.download(project.outputAudioMediaId, `${project.title.replace(/\s+/g, '_')}_dubbed.m4a`);
+        showSuccess('Master dubbed audio exported (M4A)');
+      } catch (error) {
+        showError(error instanceof Error ? error.message : 'Failed to download dubbed audio.');
+      }
     }
   };
 
-  const handleVideoUploaded = (videoUrl: string, duration?: number) => {
+  const handleVideoUploaded = (videoUrl: string, duration?: number, mediaId?: string) => {
     const updated = {
       ...project,
       videoUrl,
+      sourceVideoUrl: videoUrl,
+      mediaId: mediaId || project.mediaId,
       duration: duration || project.duration,
       updatedAt: new Date().toISOString(),
     };
@@ -271,11 +478,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const distinctSpeakers = Array.from(
     new Set(project.transcript.map(s => s.speaker).filter(Boolean))
   ) as string[];
+  const unverifiedSegmentCount = project.transcript.filter((segment) =>
+    !segment.speaker?.trim() || segment.speakerSource !== 'diarization'
+  ).length;
 
   return (
     <div style={{ backgroundColor: 'var(--c-white)', minHeight: 'calc(100vh - 68px)' }}>
       {/* Top Workspace Header Bar */}
-      <div style={{
+      <div className="studio-topbar" style={{
         borderBottom: 'var(--border-light)',
         backgroundColor: 'var(--c-white)',
         padding: '12px 24px',
@@ -284,7 +494,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
         justifyContent: 'space-between',
       }}>
         {/* Breadcrumb & Project Name */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="studio-project-heading" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
             onClick={handleBack}
             className="btn btn-ghost btn-sm"
@@ -295,25 +505,21 @@ export const StudioView: React.FC<StudioViewProps> = ({
             <ArrowLeft size={16} />
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Logo size={16} />
-            <span style={{ fontSize: '13px', color: 'var(--black-60)', fontWeight: 600 }}>dubbing.io</span>
-            <span style={{ color: 'var(--black-20)' }}>/</span>
-            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--black-100)' }}>
-              {project.title}
-            </span>
-            <span className={`badge ${project.status === 'completed' ? 'badge-completed' : 'badge-draft'}`} style={{ marginLeft: '6px' }}>
+          <div className="studio-breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="studio-brand"><Logo size={16} /></span>
+            <span className="studio-brand" style={{ fontSize: 'var(--text-control)', color: 'var(--black-60)', fontWeight: 600 }}>dubla.uz</span>
+            <span className="studio-brand" style={{ color: 'var(--black-20)' }}>/</span>
+            <h1 className="studio-project-title" title={project.title} style={{ fontSize: '14px', fontWeight: 700, color: 'var(--black-100)' }}>
+              {truncateProjectTitle(project.title)}
+            </h1>
+            <span className={`badge badge-${project.status}`} style={{ marginLeft: '6px', flexShrink: 0 }}>
               {project.status}
             </span>
           </div>
         </div>
 
         {/* Right Studio Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div className="mono" style={{ fontSize: '12px', color: 'var(--black-60)', borderRight: 'var(--border-light)', paddingRight: '14px' }}>
-            Credits: <span style={{ fontWeight: 600, color: 'var(--black-100)' }}>42 / 60m</span>
-          </div>
-
+        <div className="studio-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {project.status === 'completed' && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
@@ -329,6 +535,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 onClick={() => handleDownload('video')}
                 className="btn btn-primary btn-sm"
                 aria-label="Download video"
+                disabled={!project.dubbedVideoUrl}
+                title={project.dubbedVideoUrl ? 'Download dubbed video' : 'Dubbed video export is not available yet'}
+                style={!project.dubbedVideoUrl ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
               >
                 <Download size={14} />
                 Download video ↓
@@ -345,12 +554,13 @@ export const StudioView: React.FC<StudioViewProps> = ({
           jobId={currentJobId}
           onComplete={handleProcessingComplete}
           onError={(msg) => showError(msg)}
-          onRetry={handleStartGeneration}
+          onRetry={handleRetryGeneration}
+          onMinutesBalanceChange={onMinutesBalanceChange}
         />
       ) : (
         <div className="container-xl" style={{ padding: '32px 24px' }}>
           {project.status === 'completed' && (
-            <div style={{
+            <div className="studio-ready-banner" style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -364,7 +574,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 <h2 style={{ fontSize: '20px', fontWeight: 800 }}>
                   Your dub is ready.
                 </h2>
-                <p style={{ fontSize: '13px', color: 'var(--black-60)', marginTop: '2px' }}>
+                <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginTop: '2px' }}>
                   {project.originalLanguage.toUpperCase()} ({SUPPORTED_LANGUAGES.find(l => l.code === project.originalLanguage)?.name || 'English'})
                   {' '}→{' '}
                   <span style={{ fontWeight: 600, color: 'var(--black-100)' }}>
@@ -376,9 +586,29 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
+                  onClick={() => handleDownload('audio')}
+                  className="btn btn-secondary"
+                  disabled={!project.dubbedAudioUrl}
+                  title={project.dubbedAudioUrl ? 'Download dubbed audio' : 'Dubbed audio is not available yet'}
+                  style={{
+                    opacity: project.dubbedAudioUrl ? 1 : 0.45,
+                    cursor: project.dubbedAudioUrl ? 'pointer' : 'not-allowed',
+                  }}
+                  aria-label="Download dubbed audio"
+                >
+                  <Download size={15} />
+                  Audio
+                </button>
+                <button
                   onClick={() => handleDownload('video')}
                   className="btn btn-primary"
-                  style={{ fontWeight: 600 }}
+                  disabled={!project.dubbedVideoUrl}
+                  title={project.dubbedVideoUrl ? 'Download dubbed video' : 'Dubbed video export is not available yet'}
+                  style={{
+                    fontWeight: 600,
+                    opacity: project.dubbedVideoUrl ? 1 : 0.45,
+                    cursor: project.dubbedVideoUrl ? 'pointer' : 'not-allowed',
+                  }}
                   aria-label="Download video"
                 >
                   <Download size={15} />
@@ -396,7 +626,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
           )}
 
           {/* Main 2-Column Studio Grid */}
-          <div style={{
+          <div className="studio-grid" style={{
             display: 'grid',
             gridTemplateColumns: '1.2fr 1fr',
             gap: '32px',
@@ -417,18 +647,21 @@ export const StudioView: React.FC<StudioViewProps> = ({
               </div>
 
               {/* Dubbing Settings Panel */}
-              <div className="card" style={{ padding: '24px' }}>
+              <div className="card studio-settings" style={{ padding: '24px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Sparkles size={16} />
                   Dubbing Configuration
                 </h3>
+                {isSettingsSaving && <p role="status">Saving studio settings...</p>}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+                <div className="studio-language-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px', marginBottom: '20px' }}>
                   <div>
-                    <label className="label">Original language</label>
+                    <label className="label" htmlFor="studio-original-language">Original language</label>
                     <select
+                      id="studio-original-language"
                       className="select"
                       value={project.originalLanguage}
+                      disabled={isSettingsSaving}
                       onChange={e => handleLanguageChange('originalLanguage', e.target.value)}
                     >
                       {SUPPORTED_LANGUAGES.map(lang => (
@@ -440,10 +673,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="label">Translate to</label>
+                    <label className="label" htmlFor="studio-target-language">Translate to</label>
                     <select
+                      id="studio-target-language"
                       className="select"
                       value={project.targetLanguage}
+                      disabled={isSettingsSaving}
                       onChange={e => handleLanguageChange('targetLanguage', e.target.value)}
                     >
                       {SUPPORTED_LANGUAGES.map(lang => (
@@ -459,15 +694,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 <div style={{ marginBottom: '20px' }}>
                   <label className="label">Primary Neural Voice Profile</label>
                   <div
-                    onClick={() => {
-                      setTargetSpeakerForVoiceModal(null);
-                      setIsVoiceModalOpen(true);
-                    }}
+                    className="studio-voice-picker"
                     style={{
                       border: 'var(--border-light)',
                       borderRadius: 'var(--radius-sm)',
                       padding: '14px 16px',
-                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -482,7 +713,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                         <span style={{ fontSize: '15px', fontWeight: 700 }}>{currentVoice.name}</span>
                         <span className="badge">{currentVoice.style}</span>
                       </div>
-                      <div style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px' }}>
+                      <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)', marginTop: '2px' }}>
                         {currentVoice.language} • {currentVoice.tone}
                       </div>
                     </div>
@@ -490,6 +721,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
+                      aria-haspopup="dialog"
+                      onClick={() => {
+                        setTargetSpeakerForVoiceModal(null);
+                        setIsVoiceModalOpen(true);
+                      }}
+                      disabled={isSettingsSaving}
                       style={{ padding: '6px 12px' }}
                     >
                       Change voice →
@@ -500,7 +737,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 {/* Speaker Voice Mapping (if distinct speakers exist) */}
                 {distinctSpeakers.length > 1 && (
                   <div style={{ marginBottom: '24px', paddingTop: '16px', borderTop: 'var(--border-light)' }}>
-                    <label className="label">Speaker Voice Assignments ({distinctSpeakers.length} speakers detected)</label>
+                    <label className="label">Speaker Voice Assignments ({distinctSpeakers.length} speakers in transcript)</label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
                       {distinctSpeakers.map((speaker) => {
                         const assignedVoiceId = project.speakerVoices?.[speaker] || project.voiceId;
@@ -520,8 +757,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
                             }}
                           >
                             <div>
-                              <div style={{ fontSize: '13px', fontWeight: 700 }}>{speaker}</div>
-                              <div style={{ fontSize: '11px', color: 'var(--black-60)' }}>
+                              <div style={{ fontSize: 'var(--text-control)', fontWeight: 700 }}>{speaker}</div>
+                              <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)' }}>
                                 {speakerVoice.name} ({speakerVoice.style})
                               </div>
                             </div>
@@ -531,8 +768,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
                                 setTargetSpeakerForVoiceModal(speaker);
                                 setIsVoiceModalOpen(true);
                               }}
+                              disabled={isSettingsSaving}
                               className="btn btn-ghost btn-sm"
-                              style={{ fontSize: '11px', padding: '4px 8px' }}
+                              style={{ fontSize: 'var(--text-control)', padding: '4px 8px' }}
                             >
                               Assign Voice →
                             </button>
@@ -543,17 +781,47 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   </div>
                 )}
 
+                {unverifiedSegmentCount > 0 && (
+                  <p role="status" style={{ marginBottom: '16px', fontSize: 'var(--text-body)', lineHeight: 1.45, color: 'var(--black-70)' }}>
+                    Speaker identity is missing or unverified in {unverifiedSegmentCount} transcript segment{unverifiedSegmentCount === 1 ? '' : 's'}. Re-transcribe before using automatic voice cloning.
+                  </p>
+                )}
+
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginBottom: '10px', fontSize: 'var(--text-control)', lineHeight: 1.45 }}>
+                  <input type="checkbox" checked={autoCloneVoices} onChange={(event) => setAutoCloneVoices(event.target.checked)} disabled={isProcessing} />
+                  Clone each detected speaker's voice for the translated dub
+                </label>
+                {autoCloneVoices && (
+                  <>
+                    <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginBottom: '10px', fontSize: 'var(--text-control)', lineHeight: 1.45 }}>
+                      <input type="checkbox" checked={voiceCloningConsent} onChange={(event) => setVoiceCloningConsent(event.target.checked)} disabled={isProcessing} />
+                      I confirm I have permission from every speaker to clone and use their voice in this dub.
+                    </label>
+                    {canCloneVoices === false && (
+                      <p role="status" style={{ marginBottom: '12px', fontSize: 'var(--text-body)', color: 'var(--black-70)' }}>
+                        Automatic voice cloning requires an ElevenLabs API key on the server.
+                      </p>
+                    )}
+                  </>
+                )}
+
                 {/* Generate Dub Primary Action */}
                 <button
                   type="button"
                   onClick={handleStartGeneration}
-                  disabled={isProcessing}
+                  disabled={isProcessing || isSettingsSaving || saveStatus === 'saving' || canRenderFinalDub === false || (autoCloneVoices && canCloneVoices === false)}
                   className="btn btn-primary btn-lg"
-                  style={{ width: '100%', padding: '14px', fontSize: '15px', opacity: isProcessing ? 0.7 : 1 }}
+                  title={canRenderFinalDub === false ? 'Configure an OpenAI or ElevenLabs TTS key to render a final dub.' : undefined}
+                  style={{ width: '100%', padding: '14px', fontSize: '15px', opacity: isProcessing || isSettingsSaving || saveStatus === 'saving' || canRenderFinalDub === false ? 0.7 : 1 }}
                 >
                   <Sparkles size={16} />
                   {project.status === 'completed' ? 'Re-generate dub →' : 'Generate dub →'}
                 </button>
+                {canRenderFinalDub === false && (
+                  <p role="status" style={{ marginTop: '10px', fontSize: 'var(--text-body)', lineHeight: 1.45, color: 'var(--black-60)' }}>
+                    Final dub rendering is unavailable until an OpenAI or ElevenLabs TTS API key is configured on the server.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -567,6 +835,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 currentPlayTime={currentPlayTime}
                 onSeekToTime={(time) => setSeekTime(time)}
                 saveStatus={saveStatus}
+                onRetryTranscription={currentTranscriptionJobId ? handleRetryTranscription : undefined}
               />
             </div>
           </div>
@@ -587,6 +856,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
           setIsVoiceModalOpen(false);
         }}
         filterLanguageCode={project.targetLanguage}
+        renderableVoiceIds={renderableVoiceIds}
       />
     </div>
   );

@@ -40,7 +40,7 @@ describe('FFmpeg Audio Extractor Unit Tests', () => {
     expect(available).toBe(true);
   });
 
-  it('2. Extracts 16kHz mono PCM WAV from media file', async () => {
+  it('2. Extracts compact 16kHz mono 64kbps MP3 from media file', async () => {
     if (!fs.existsSync(validMediaVideoPath)) {
       // Fallback in case ffmpeg was not run in beforeAll
       return;
@@ -57,13 +57,14 @@ describe('FFmpeg Audio Extractor Unit Tests', () => {
     expect(result.sampleRate).toBe(16000);
     expect(result.channels).toBe(1);
 
-    // Verify WAV header in output
-    const header = Buffer.alloc(12);
+    expect(result.audioFilePath).toMatch(/\.mp3$/);
+    expect(result.bitrateKbps).toBe(64);
+    // Verify MP3 has either an ID3 header or an MPEG frame sync.
+    const header = Buffer.alloc(3);
     const fd = fs.openSync(result.audioFilePath, 'r');
-    fs.readSync(fd, header, 0, 12, 0);
+    fs.readSync(fd, header, 0, 3, 0);
     fs.closeSync(fd);
-    expect(header.toString('ascii', 0, 4)).toBe('RIFF');
-    expect(header.toString('ascii', 8, 12)).toBe('WAVE');
+    expect(header.toString('ascii', 0, 3) === 'ID3' || (header[0] === 0xff && (header[1] & 0xe0) === 0xe0)).toBe(true);
 
     // Test cleanup
     result.cleanup();

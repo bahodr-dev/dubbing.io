@@ -68,7 +68,7 @@ export async function exchangeCodeAndGetProfile(code) {
   const userRes = await fetch('https://api.github.com/user', {
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'User-Agent': 'Dubbing-io-Auth',
+      'User-Agent': 'Dubla-uz-Auth',
       Accept: 'application/vnd.github+json',
     },
   });
@@ -90,7 +90,7 @@ export async function exchangeCodeAndGetProfile(code) {
     const emailsRes = await fetch('https://api.github.com/user/emails', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'User-Agent': 'Dubbing-io-Auth',
+        'User-Agent': 'Dubla-uz-Auth',
         Accept: 'application/vnd.github+json',
       },
     });

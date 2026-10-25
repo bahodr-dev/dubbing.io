@@ -19,7 +19,6 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
   let userAProjectId = '';
   let userAMedia10sId = '';
   let userAMedia35sId = '';
-  let userACorruptMediaId = '';
   let media10sLocalPath = '';
 
   beforeAll(async () => {
@@ -29,24 +28,24 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     const resA = await request(app)
       .post('/api/auth/signup')
       .send({
-        email: `tx_user_a_${Date.now()}@dubbing.io`,
+        email: `tx_user_a_${Date.now()}@dubla.uz`,
         password: 'Password123!',
         name: 'User A Transcription',
       });
     const cookiesA = resA.headers['set-cookie'] || [];
-    userACookie = cookiesA.find((c) => c.includes('dubbing_session='));
+    userACookie = cookiesA.find((c) => c.includes('dubla_session='));
     userAId = resA.body.user.id;
 
     // 2. Sign up User B
     const resB = await request(app)
       .post('/api/auth/signup')
       .send({
-        email: `tx_user_b_${Date.now()}@dubbing.io`,
+        email: `tx_user_b_${Date.now()}@dubla.uz`,
         password: 'Password123!',
         name: 'User B Attacker',
       });
     const cookiesB = resB.headers['set-cookie'] || [];
-    userBCookie = cookiesB.find((c) => c.includes('dubbing_session='));
+    userBCookie = cookiesB.find((c) => c.includes('dubla_session='));
     _userBId = resB.body.user.id;
 
     // 3. User A creates a project
@@ -92,13 +91,6 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
       .attach('file', media35sPath);
     userAMedia35sId = upload35sRes.body.id;
 
-    // 7. Upload corrupt non-media file
-    const corruptBuffer = Buffer.from('FAKE_CORRUPT_VIDEO_STREAM_TEST_123');
-    const uploadCorruptRes = await request(app)
-      .post('/api/media/upload')
-      .set('Cookie', userACookie)
-      .attach('file', corruptBuffer, 'corrupt_sample.mp4');
-    userACorruptMediaId = uploadCorruptRes.body.id;
   });
 
   afterAll(() => {
@@ -297,28 +289,15 @@ describe('Real Video Transcription API & Duration Integration Tests (/api/dubbin
     expect(jobData.result.duration).not.toBe(30);
   });
 
-  it('10. Failure handling — Duration detection failure on corrupt media results in failed job with safe error', async () => {
+  it('10. Corrupt media is rejected at upload before a background job can be created', async () => {
+    const corruptBuffer = Buffer.from('FAKE_CORRUPT_VIDEO_STREAM_TEST_123');
     const res = await request(app)
-      .post('/api/dubbing/transcribe')
+      .post('/api/media/upload')
       .set('Cookie', userACookie)
-      .send({
-        mediaId: userACorruptMediaId,
-        projectId: userAProjectId,
-        duration: 30, // Client duration must NOT cause fake success
-        providerType: 'mock',
-      });
+      .attach('file', corruptBuffer, 'corrupt_sample.mp4');
 
-    expect(res.status).toBe(202);
-    const jobId = res.body.jobId;
-
-    const jobData = await pollJob(jobId, userACookie);
-    expect(jobData.status).toBe('failed');
-    expect(jobData).not.toHaveProperty('result');
-    expect(jobData.error).toMatch(/Unable to determine media duration|Media validation failed/i);
-
-    // Must not expose absolute paths or stack traces
-    expect(jobData.error).not.toContain('/home/');
-    expect(jobData.error).not.toContain('/run/media');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/does not match a recognised audio or video format/i);
   });
 
   it('11. Test F — Mock provider remains functional with explicit duration when no real media is involved', async () => {

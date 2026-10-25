@@ -1,8 +1,9 @@
 import express from 'express';
+import * as Sentry from '@sentry/node';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
-import { initDatabase } from './db.js';
+import 'dotenv/config';
+import { getDatabaseMigrationStatus, initDatabase } from './db.js';
 import { authRouter } from './routes/auth.js';
 import { projectsRouter } from './routes/projects.js';
 import { mediaRouter } from './routes/media.js';
@@ -10,8 +11,7 @@ import { voicesRouter } from './routes/voices.js';
 import { dubbingRouter } from './routes/dubbing.js';
 import { paymentsRouter } from './routes/payments.js';
 import { apiLimiter, authLimiter, uploadLimiter } from './middleware/rateLimiter.js';
-
-dotenv.config();
+import { apiErrorHandler, apiNotFound, normalizeApiErrors } from './middleware/apiErrorHandler.js';
 
 export const app = express();
 
@@ -19,6 +19,8 @@ export const app = express();
 initDatabase();
 
 // Middleware
+app.use(normalizeApiErrors);
+
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -32,13 +34,15 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('CORS blocked: Origin not allowed.'));
+      const error = new Error('CORS blocked: Origin not allowed.');
+      error.status = 403;
+      callback(error);
     }
   },
   credentials: true,
 }));
 app.use(cookieParser());
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({ limit: '100mb', type: ['application/json', 'text/json', 'application/*+json'] }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Apply General Rate Limiter to all /api routes in production
@@ -64,5 +68,21 @@ app.use('/api/payments', paymentsRouter);
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), service: 'Dubbing.io API' });
+  const migrations = getDatabaseMigrationStatus();
+  res.json({
+    status: migrations.pending.length === 0 ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    service: 'dubla.uz API',
+    database: {
+      schemaVersion: migrations.currentVersion,
+      latestSchemaVersion: migrations.latestVersion,
+      pendingMigrations: migrations.pending.length,
+    },
+  });
 });
+
+// API responses always use the same error envelope, including unknown routes
+// and unexpected Express middleware errors.
+app.use('/api', apiNotFound);
+if (Sentry.isInitialized()) Sentry.setupExpressErrorHandler(app);
+app.use(apiErrorHandler);

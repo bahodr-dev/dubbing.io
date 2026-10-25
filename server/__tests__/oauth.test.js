@@ -50,7 +50,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     vi.spyOn(googleProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
       provider: 'google',
       providerAccountId: `sub_single_use_${Date.now()}`,
-      email: `singleuse_${Date.now()}@dubbing.io`,
+      email: `singleuse_${Date.now()}@dubla.uz`,
       emailVerified: true,
       name: 'Single Use User',
       avatarUrl: '',
@@ -60,7 +60,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     const firstRes = await request(app)
       .get(`/api/auth/google/callback?code=code_1&state=${state}`);
     expect(firstRes.status).toBe(200);
-    expect(firstRes.text).toContain('DUBBING_AUTH_SUCCESS');
+    expect(firstRes.text).toContain('DUBLA_AUTH_SUCCESS');
 
     // Second use with same state: must fail with invalid state error
     const replayRes = await request(app)
@@ -71,7 +71,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
 
   it('5. Existing OAuth account logs in with HttpOnly cookie and NO token in postMessage or URL', async () => {
     const existingUser = userRepository.createUser({
-      email: `oauth_existing_${Date.now()}@dubbing.io`,
+      email: `oauth_existing_${Date.now()}@dubla.uz`,
       name: 'Existing Google User',
       provider: 'google',
     });
@@ -99,7 +99,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
       .get(`/api/auth/google/callback?code=mock_google_auth_code&state=${state}`);
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
+    expect(res.text).toContain('DUBLA_AUTH_SUCCESS');
 
     // SECURITY CHECKS:
     // 1. NO token in postMessage payload
@@ -114,14 +114,14 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
 
     // 4. Session cookie is set securely with HttpOnly
     const cookies = res.headers['set-cookie'] || [];
-    const sessionCookie = cookies.find((c) => c.includes('dubbing_session='));
+    const sessionCookie = cookies.find((c) => c.includes('dubla_session='));
     expect(sessionCookie).toBeDefined();
     expect(sessionCookie).toMatch(/httponly/i);
     expect(sessionCookie).toMatch(/samesite=lax/i);
   });
 
   it('6. New OAuth account creates a new user and linked oauth_accounts record', async () => {
-    const newGoogleEmail = `new_google_user_${Date.now()}@dubbing.io`;
+    const newGoogleEmail = `new_google_user_${Date.now()}@dubla.uz`;
     const newGoogleSub = `sub_${Date.now()}`;
 
     vi.spyOn(googleProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
@@ -139,7 +139,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
       .get(`/api/auth/google/callback?code=mock_code&state=${state}`);
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
+    expect(res.text).toContain('DUBLA_AUTH_SUCCESS');
 
     const createdUser = userRepository.findByEmail(newGoogleEmail);
     expect(createdUser).toBeDefined();
@@ -151,7 +151,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
   });
 
   it('7. Verified email matching links new GitHub OAuth provider to existing user', async () => {
-    const sharedEmail = `shared_user_${Date.now()}@dubbing.io`;
+    const sharedEmail = `shared_user_${Date.now()}@dubla.uz`;
     const existingPasswordUser = userRepository.createUser({
       email: sharedEmail,
       name: 'Password User',
@@ -175,7 +175,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
       .get(`/api/auth/github/callback?code=mock_github_code&state=${state}`);
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('DUBBING_AUTH_SUCCESS');
+    expect(res.text).toContain('DUBLA_AUTH_SUCCESS');
 
     const linkedAccount = oauthAccountRepository.findByProviderAccount('github', githubId);
     expect(linkedAccount).toBeDefined();
@@ -183,7 +183,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
   });
 
   it('8. Unverified email NEVER automatically links to an existing user account', async () => {
-    const victimEmail = `victim_${Date.now()}@dubbing.io`;
+    const victimEmail = `victim_${Date.now()}@dubla.uz`;
     const victimUser = userRepository.createUser({
       email: victimEmail,
       name: 'Victim User',
@@ -222,7 +222,7 @@ describe('OAuth Authentication & Security Tests (/api/auth)', () => {
     vi.spyOn(googleProvider, 'exchangeCodeAndGetProfile').mockResolvedValue({
       provider: 'google',
       providerAccountId: `sub_open_redir_${Date.now()}`,
-      email: `openredir_${Date.now()}@dubbing.io`,
+      email: `openredir_${Date.now()}@dubla.uz`,
       emailVerified: true,
       name: 'Test User',
       avatarUrl: '',

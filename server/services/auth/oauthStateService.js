@@ -20,7 +20,7 @@ export function createPkceChallenge(codeVerifier) {
 /**
  * Creates and stores a secure OAuth state record
  */
-export function createOAuthState({ provider, redirectUrl = '/dashboard', usePkce = false }) {
+export function createOAuthState({ provider, redirectUrl = '/dashboard', usePkce = false, inviteId = null }) {
   const state = generateRandomString(32);
   const codeVerifier = usePkce ? generateRandomString(43) : null;
   const expiresAt = Date.now() + STATE_TTL_MS;
@@ -31,9 +31,9 @@ export function createOAuthState({ provider, redirectUrl = '/dashboard', usePkce
   } catch (_) {}
 
   db.prepare(`
-    INSERT INTO oauth_states (state, provider, code_verifier, redirect_url, expires_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(state, provider, codeVerifier, redirectUrl, expiresAt);
+    INSERT INTO oauth_states (state, provider, code_verifier, redirect_url, expires_at, invite_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(state, provider, codeVerifier, redirectUrl, expiresAt, inviteId);
 
   return {
     state,

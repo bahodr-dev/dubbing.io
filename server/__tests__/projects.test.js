@@ -12,23 +12,23 @@ describe('Projects API Security & Multi-tenant Isolation (/api/projects)', () =>
     const resA = await request(app)
       .post('/api/auth/signup')
       .send({
-        email: `usera_${Date.now()}@dubbing.io`,
+        email: `usera_${Date.now()}@dubla.uz`,
         password: 'Password123!',
         name: 'User A',
       });
     const cookiesA = resA.headers['set-cookie'] || [];
-    userACookie = cookiesA.find((c) => c.includes('dubbing_session='));
+    userACookie = cookiesA.find((c) => c.includes('dubla_session='));
 
     // 2. Create User B
     const resB = await request(app)
       .post('/api/auth/signup')
       .send({
-        email: `userb_${Date.now()}@dubbing.io`,
+        email: `userb_${Date.now()}@dubla.uz`,
         password: 'Password123!',
         name: 'User B',
       });
     const cookiesB = resB.headers['set-cookie'] || [];
-    userBCookie = cookiesB.find((c) => c.includes('dubbing_session='));
+    userBCookie = cookiesB.find((c) => c.includes('dubla_session='));
   });
 
   it('POST /api/projects - User A can create a project', async () => {
@@ -72,6 +72,21 @@ describe('Projects API Security & Multi-tenant Isolation (/api/projects)', () =>
       });
 
     expect(res.status).toBe(404); // returns 404 project not found for unauthorized user
+  });
+
+  it('PUT /api/projects/:id - persists language and per-speaker voice choices', async () => {
+    const update = await request(app)
+      .put(`/api/projects/${userAProjectId}`)
+      .set('Cookie', userACookie)
+      .send({
+        originalLanguage: 'en',
+        targetLanguage: 'ja',
+        speakerVoices: { 'Speaker 1': 'voice-kenji' },
+      });
+
+    expect(update.status).toBe(200);
+    expect(update.body.project.targetLanguage).toBe('ja');
+    expect(update.body.project.speakerVoices).toEqual({ 'Speaker 1': 'voice-kenji' });
   });
 
   it('DELETE /api/projects/:id - User B is FORBIDDEN from deleting User A project', async () => {

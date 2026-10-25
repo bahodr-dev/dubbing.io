@@ -1,45 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import type { ActiveTab } from '../types';
-import { Check, X, AlertCircle } from 'lucide-react';
+import { Check, X, AlertCircle, ArrowLeft } from 'lucide-react';
 import { api } from '../services/api';
 import { Logo } from '../components/Logo';
 
 interface SignUpViewProps {
   onNavigate?: (tab: ActiveTab) => void;
   onSuccess: (email: string) => void;
+  initialMode?: 'signin' | 'signup';
   onOpenSignIn?: () => void;
+}
+
+const OAUTH_ERROR_MAP: Record<string, string> = {
+  oauth_failed: 'Authentication failed. Please try again.',
+  oauth_denied: 'Access was denied by the authentication provider.',
+  oauth_state_invalid: 'Session state expired or invalid. Please try again.',
+  oauth_expired: 'Authentication session expired. Please try again.',
+  INVITE_REQUIRED: 'This closed beta requires an invitation link.',
+  INVITE_INVALID: 'This invitation is invalid or has already been used.',
+  INVITE_EXPIRED: 'This invitation has expired.',
+  INVITE_EMAIL_MISMATCH: 'Your account email must match the invitation email.',
+};
+
+function getInitialOAuthError(): string {
+  if (typeof window === 'undefined') return '';
+  const err = new URLSearchParams(window.location.search).get('error');
+  if (!err) return '';
+  return OAUTH_ERROR_MAP[err] || 'Authentication failed. Please try again.';
 }
 
 export const SignUpView: React.FC<SignUpViewProps> = ({
   onSuccess,
+  onNavigate,
+  initialMode = 'signin',
 }) => {
-  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>(initialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(getInitialOAuthError);
   const [resetSent, setResetSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check for error parameter from OAuth callbacks and listen for popup messages
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const err = params.get('error');
-    if (err) {
-      const errorMap: Record<string, string> = {
-        oauth_failed: 'Authentication failed. Please try again.',
-        oauth_denied: 'Access was denied by the authentication provider.',
-        oauth_state_invalid: 'Session state expired or invalid. Please try again.',
-        oauth_expired: 'Authentication session expired. Please try again.',
-      };
-      setError(errorMap[err] || 'Authentication failed. Please try again.');
-    }
 
     const handleAuthMessage = async (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
 
       if (event.data && typeof event.data === 'object') {
-        if (event.data.type === 'DUBBING_AUTH_SUCCESS') {
+        if (event.data.type === 'DUBLA_AUTH_SUCCESS') {
           try {
             const meRes = await api.auth.me();
             onSuccess(meRes.user.email);
@@ -47,7 +57,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             const errorObj = err as Error;
             setError(errorObj.message || 'Authentication failed.');
           }
-        } else if (event.data.type === 'DUBBING_AUTH_ERROR') {
+        } else if (event.data.type === 'DUBLA_AUTH_ERROR') {
           setError('Authentication failed. Please try again.');
         }
       }
@@ -71,14 +81,23 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
       setError('Please enter your password.');
       return;
     }
-    if (authMode !== 'forgot' && password.length < 6) {
-      setError('Password must be at least 6 characters.');
+    if (authMode !== 'forgot' && (password.length < 8 || !/[a-zA-Z]/.test(password) || !/\d/.test(password))) {
+      setError('Password must be at least 8 characters and include a letter and number.');
       return;
     }
 
     if (authMode === 'forgot') {
-      setResetSent(true);
       setError('');
+      setIsSubmitting(true);
+      try {
+        await api.auth.forgotPassword(email);
+        setResetSent(true);
+      } catch (err: unknown) {
+        const errorObj = err as Error;
+        setError(errorObj.message || 'Could not request a reset link. Please try again.');
+      } finally {
+        setIsSubmitting(false);
+      }
       return;
     }
 
@@ -87,7 +106,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
     try {
       if (authMode === 'signup') {
-        const res = await api.auth.signup(email, password, name.trim());
+        const inviteToken = new URLSearchParams(window.location.search).get('invite');
+        const res = await api.auth.signup(email, password, name.trim(), inviteToken);
         onSuccess(res.user.email);
       } else {
         const res = await api.auth.signin(email, password);
@@ -108,15 +128,17 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
     const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
     
+    const inviteToken = new URLSearchParams(window.location.search).get('invite');
+    const oauthUrl = `/api/auth/${provider}${inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : ''}`;
     const popup = window.open(
-      `/api/auth/${provider}`,
-      `dubbing_oauth_${provider}`,
+      oauthUrl,
+      `dubla_oauth_${provider}`,
       `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
     );
 
     if (!popup || popup.closed || typeof popup.closed === 'undefined') {
       // Fallback if popup is blocked by browser
-      window.location.assign(`/api/auth/${provider}`);
+      window.location.assign(oauthUrl);
     }
   };
 
@@ -149,7 +171,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             letterSpacing: '-0.04em',
             color: '#ffffff',
           }}>
-            dubbing.io
+            dubla.uz
           </span>
         </div>
 
@@ -183,6 +205,15 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
       <div className="signup-right-panel">
         <div className="signup-anim-form" style={{ width: '100%', maxWidth: '380px' }}>
           
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('home')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', border: 'none', background: 'transparent', color: 'var(--black-60)', fontSize: 'var(--text-control)', padding: '6px 0', marginBottom: '24px', cursor: 'pointer' }}
+            >
+              <ArrowLeft size={14} /> Bosh sahifa
+            </button>
+          )}
           {/* Header */}
           <div style={{ marginBottom: '28px' }}>
             <h2 style={{
@@ -193,12 +224,12 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               color: 'var(--black-100)',
               marginBottom: '8px',
             }}>
-              {authMode === 'signin' && 'Sign in to Dubbing'}
-              {authMode === 'signup' && 'Create your Dubbing account'}
+              {authMode === 'signin' && 'Sign in to dubla.uz'}
+              {authMode === 'signup' && 'Create your dubla.uz account'}
               {authMode === 'forgot' && 'Reset your password'}
             </h2>
             <p style={{
-              fontSize: '14px',
+              fontSize: 'var(--text-body)',
               color: 'rgba(0, 0, 0, 0.55)',
               lineHeight: 1.5,
               fontWeight: 400,
@@ -220,7 +251,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 backgroundColor: '#FEF2F2',
                 border: '1px solid rgba(239, 68, 68, 0.25)',
                 borderRadius: '10px',
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 lineHeight: 1.45,
                 color: '#991B1B',
                 marginBottom: '16px',
@@ -279,7 +310,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 backgroundColor: '#111827',
                 border: '1px solid rgba(255, 255, 255, 0.14)',
                 borderRadius: '10px',
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 color: '#ffffff',
                 marginBottom: '16px',
                 fontWeight: 500,
@@ -308,14 +339,12 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                     borderRadius: '9999px',
                     border: '1px solid rgba(0, 0, 0, 0.16)',
                     padding: '0 20px',
-                    fontSize: '14px',
+                    fontSize: 'var(--text-input)',
                     color: '#111827',
                     backgroundColor: '#ffffff',
                     outline: 'none',
                     transition: 'border-color 140ms ease',
                   }}
-                  onFocus={e => e.currentTarget.style.borderColor = '#000000'}
-                  onBlur={e => e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.16)'}
                 />
               </div>
             )}
@@ -337,14 +366,12 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                   borderRadius: '9999px',
                   border: '1px solid rgba(0, 0, 0, 0.16)',
                   padding: '0 20px',
-                  fontSize: '14px',
+                  fontSize: 'var(--text-input)',
                   color: '#111827',
                   backgroundColor: '#ffffff',
                   outline: 'none',
                   transition: 'border-color 140ms ease',
                 }}
-                onFocus={e => e.currentTarget.style.borderColor = '#000000'}
-                onBlur={e => e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.16)'}
               />
             </div>
 
@@ -365,14 +392,12 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                     borderRadius: '9999px',
                     border: '1px solid rgba(0, 0, 0, 0.16)',
                     padding: '0 20px',
-                    fontSize: '14px',
+                    fontSize: 'var(--text-input)',
                     color: '#111827',
                     backgroundColor: '#ffffff',
                     outline: 'none',
                     transition: 'border-color 140ms ease',
                   }}
-                  onFocus={e => e.currentTarget.style.borderColor = '#000000'}
-                  onBlur={e => e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.16)'}
                 />
               </div>
             )}
@@ -383,7 +408,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               alignItems: 'center',
               justifyContent: 'space-between',
               margin: '10px 4px 20px 4px',
-              fontSize: '13px',
+              fontSize: 'var(--text-control)',
             }}>
               {authMode === 'signin' && (
                 <>
@@ -400,7 +425,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                       textDecoration: 'underline',
                       cursor: 'pointer',
                       padding: 0,
-                      fontSize: '13px',
+                      fontSize: 'var(--text-control)',
                       fontWeight: 500,
                     }}
                   >
@@ -411,6 +436,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                     onClick={() => {
                       setAuthMode('forgot');
                       setError('');
+                      setResetSent(false);
                     }}
                     style={{
                       background: 'none',
@@ -419,7 +445,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                       textDecoration: 'underline',
                       cursor: 'pointer',
                       padding: 0,
-                      fontSize: '13px',
+                      fontSize: 'var(--text-control)',
                       fontWeight: 500,
                     }}
                   >
@@ -442,7 +468,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                     textDecoration: 'underline',
                     cursor: 'pointer',
                     padding: 0,
-                    fontSize: '13px',
+                    fontSize: 'var(--text-control)',
                     fontWeight: 500,
                   }}
                 >
@@ -465,7 +491,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                     textDecoration: 'underline',
                     cursor: 'pointer',
                     padding: 0,
-                    fontSize: '13px',
+                    fontSize: 'var(--text-control)',
                     fontWeight: 500,
                   }}
                 >
@@ -517,7 +543,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             color: 'rgba(0, 0, 0, 0.35)',
           }}>
             <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.1)' }}></div>
-            <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'lowercase' }}>
+            <span style={{ fontSize: 'var(--text-meta)', fontWeight: 500, textTransform: 'lowercase' }}>
               or
             </span>
             <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.1)' }}></div>
@@ -592,7 +618,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
           {/* Legal Notice */}
           <p style={{
-            fontSize: '11.5px',
+            fontSize: 'var(--text-body)',
             color: 'rgba(0, 0, 0, 0.45)',
             textAlign: 'center',
             lineHeight: 1.5,

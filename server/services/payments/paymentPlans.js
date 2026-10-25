@@ -1,5 +1,5 @@
 /**
- * Dubbing.io Payment Plans & Pricing Matrix
+ * dubla.uz Payment Plans & Pricing Matrix
  * Supports UZS (Uzbekistan So'm) and USD ($)
  */
 
@@ -77,5 +77,5 @@ export const PAYMENT_PLANS = {
 };
 
 export function getPlan(planId) {
-  return PAYMENT_PLANS[planId] || null;
+  return typeof planId === 'string' && Object.hasOwn(PAYMENT_PLANS, planId) ? PAYMENT_PLANS[planId] : null;
 }

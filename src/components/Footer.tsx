@@ -23,7 +23,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
         }}>
           <div>
             <div 
-              onClick={() => onNavigate('dashboard')}
+              onClick={() => onNavigate('home')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -34,10 +34,10 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               }}
             >
               <Logo size={24} />
-              <span style={{ fontSize: '16px', fontWeight: 800, letterSpacing: '-0.04em' }}>dubbing.io</span>
+              <span style={{ fontSize: '16px', fontWeight: 800, letterSpacing: '-0.04em' }}>dubla.uz</span>
             </div>
             <p style={{
-              fontSize: '14px',
+              fontSize: 'var(--text-body)',
               color: 'var(--black-60)',
               maxWidth: '320px',
               lineHeight: 1.6,
@@ -47,7 +47,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           </div>
 
           <div>
-            <h4 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)', marginBottom: '16px' }}>
+            <h4 style={{ fontSize: 'var(--text-control)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)', marginBottom: '16px' }}>
               Product
             </h4>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -75,7 +75,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           </div>
 
           <div>
-            <h4 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)', marginBottom: '16px' }}>
+            <h4 style={{ fontSize: 'var(--text-control)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)', marginBottom: '16px' }}>
               Languages
             </h4>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -88,7 +88,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           </div>
 
           <div>
-            <h4 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)', marginBottom: '16px' }}>
+            <h4 style={{ fontSize: 'var(--text-control)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)', marginBottom: '16px' }}>
               Legal & Trust
             </h4>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -106,13 +106,13 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          fontSize: '13px',
+          fontSize: 'var(--text-control)',
           color: 'var(--black-40)',
         }}>
           <div>
-            © {new Date().getFullYear()} dubbing.io Inc. All rights reserved.
+            © {new Date().getFullYear()} dubla.uz. All rights reserved.
           </div>
-          <div className="mono" style={{ fontSize: '12px' }}>
+          <div className="mono" style={{ fontSize: 'var(--text-meta)' }}>
             44.1 kHz / 24-bit Studio Neural Engine
           </div>
         </div>

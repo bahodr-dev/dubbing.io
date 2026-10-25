@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Voice } from '../../types';
 import { api } from '../../services/api';
+import { checkMinutesBeforeUpload, checkUploadedMediaMinutes } from '../../utils/dubbingMinutes';
 import {
+  AlertCircle,
   CheckCircle2,
   SlidersHorizontal,
   ArrowUp,
@@ -14,7 +16,7 @@ import {
 
 interface WorkspaceCreatorProps {
   voices: Voice[];
-  onProjectCreated: (project: Project) => void;
+  onProjectCreated: (project: Project) => void | Promise<void>;
   onShowToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -34,6 +36,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
 
   const langDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +65,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
     setUploadedFile(null);
     setUploadedFileName('');
     setProjectName('');
+    setSourceError(null);
   };
 
   const LANGUAGES = [
@@ -77,50 +81,57 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSourceError(null);
       setUploadedFile(file);
       setUploadedFileName(file.name);
       setProjectName(file.name.replace(/\.[^/.]+$/, ''));
     }
   };
 
+  const formatFileSize = (bytes: number) => {
+    if (!bytes) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+  };
+
   const handleSubmit = async () => {
-    if (!uploadedFileName && !videoUrl) return;
+    if (!uploadedFileName && !videoUrl) {
+      setSourceError('Choose a file or paste a direct media file URL before starting.');
+      return;
+    }
 
     setIsGenerating(true);
+    setSourceError(null);
     const title =
       projectName ||
       (uploadedFileName ? uploadedFileName.replace(/\.[^/.]+$/, '') : 'Online Video Dub');
 
+    let uploadedMediaId: string | undefined;
+    let projectCreated = false;
+
     try {
-      let finalMediaUrl = videoUrl;
+      await checkMinutesBeforeUpload(uploadedFile);
+      let finalMediaUrl = '';
 
       // 1. If file was selected, upload directly to backend
       if (uploadedFile) {
         try {
           const uploadRes = await api.media.upload(uploadedFile);
           finalMediaUrl = uploadRes.url;
+          uploadedMediaId = uploadRes.mediaId || uploadRes.id;
         } catch (uploadErr: any) {
           console.warn('Media upload fallback:', uploadErr);
-          if (onShowToast) {
-            onShowToast(uploadErr.message || 'Media upload error', 'error');
-          }
+          throw uploadErr;
         }
+      } else {
+        const imported = await api.media.importUrl(videoUrl);
+        finalMediaUrl = imported.url;
+        uploadedMediaId = imported.mediaId || imported.id;
       }
 
-      // 2. Generate AI dubbing transcript timeline
-      let generatedTranscript: any[] = [];
-      try {
-        const dubbingRes = await api.dubbing.generate({
-          targetLanguage,
-          duration: 30,
-          title,
-        });
-        if (dubbingRes.transcript && dubbingRes.transcript.length > 0) {
-          generatedTranscript = dubbingRes.transcript;
-        }
-      } catch (genErr) {
-        console.warn('Dubbing timeline generated fallback:', genErr);
-      }
+      if (!uploadedMediaId) throw new Error('Media upload did not return an ID. Please try again.');
+      const duration = await checkUploadedMediaMinutes(uploadedMediaId);
 
       const newProj: Project = {
         id: `proj-${Date.now()}`,
@@ -128,21 +139,36 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
         originalLanguage: 'en',
         targetLanguage: targetLanguage,
         status: 'draft',
-        duration: 30,
+        duration,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         videoUrl: finalMediaUrl,
+        mediaId: uploadedMediaId,
         thumbnailUrl:
           'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80',
         voiceId: selectedVoiceId || (targetLanguage === 'uz' ? 'voice-farrux' : 'voice-elena'),
-        transcript: generatedTranscript,
+        transcript: [],
       };
 
-      onProjectCreated(newProj);
+      // Persist before queueing so the job can be restored after navigation or
+      // a browser refresh. The transcription worker updates its real duration.
+      await onProjectCreated(newProj);
+      projectCreated = true;
+      await api.dubbing.transcribe({
+        mediaId: uploadedMediaId,
+        projectId: newProj.id,
+        language: newProj.originalLanguage,
+      });
       if (onShowToast) {
-        onShowToast('Dubbing project created successfully!', 'success');
+        onShowToast('Project saved. Transcription is starting in the studio.', 'success');
       }
     } catch (err: any) {
+      if (uploadedMediaId && !projectCreated) {
+        try { await api.media.delete(uploadedMediaId); } catch (cleanupError) {
+          console.warn('Could not remove unused media after minute check:', cleanupError);
+        }
+      }
+      setSourceError(err.message || 'We could not start this dubbing project. Please try again.');
       if (onShowToast) {
         onShowToast(err.message || 'Failed to start dubbing', 'error');
       }
@@ -158,6 +184,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
 
   return (
     <div
+      className="workspace-creator"
       style={{
         backgroundColor: '#ffffff',
         border: '1px solid rgba(0, 0, 0, 0.1)',
@@ -169,6 +196,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
     >
       {/* Top Controls inside box: [Upload] [Paste URL] on left, Dubbing workspace on right */}
       <div
+        className="workspace-creator-header"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -177,6 +205,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
         }}
       >
         <div
+          className="workspace-source-toggle"
           style={{
             display: 'inline-flex',
             backgroundColor: '#F3F4F6',
@@ -187,12 +216,13 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
         >
           <button
             type="button"
+            className={`workspace-source-button ${sourceMode === 'upload' ? 'is-active' : ''}`}
             onClick={() => setSourceMode('upload')}
             style={{
               border: 'none',
               borderRadius: '8px',
               padding: '6px 16px',
-              fontSize: '13px',
+              fontSize: 'var(--text-control)',
               fontWeight: sourceMode === 'upload' ? 600 : 500,
               backgroundColor: sourceMode === 'upload' ? '#ffffff' : 'transparent',
               color: sourceMode === 'upload' ? '#000000' : 'rgba(0, 0, 0, 0.55)',
@@ -205,12 +235,13 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           </button>
           <button
             type="button"
+            className={`workspace-source-button ${sourceMode === 'url' ? 'is-active' : ''}`}
             onClick={() => setSourceMode('url')}
             style={{
               border: 'none',
               borderRadius: '8px',
               padding: '6px 16px',
-              fontSize: '13px',
+              fontSize: 'var(--text-control)',
               fontWeight: sourceMode === 'url' ? 600 : 500,
               backgroundColor: sourceMode === 'url' ? '#ffffff' : 'transparent',
               color: sourceMode === 'url' ? '#000000' : 'rgba(0, 0, 0, 0.55)',
@@ -223,7 +254,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           </button>
         </div>
 
-        <span style={{ fontSize: '12px', color: 'rgba(0, 0, 0, 0.4)', fontWeight: 500 }}>
+        <span style={{ fontSize: 'var(--text-meta)', color: 'rgba(0, 0, 0, 0.4)', fontWeight: 500 }}>
           Dubbing workspace
         </span>
       </div>
@@ -231,6 +262,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
       {/* Large Dropzone / Content Area */}
       {sourceMode === 'upload' ? (
         <div
+          className="workspace-dropzone"
           onDragOver={(e) => {
             e.preventDefault();
             setIsDragging(true);
@@ -241,6 +273,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
             setIsDragging(false);
             const file = e.dataTransfer.files?.[0];
             if (file) {
+              setSourceError(null);
               setUploadedFile(file);
               setUploadedFileName(file.name);
               setProjectName(file.name.replace(/\.[^/.]+$/, ''));
@@ -248,7 +281,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           }}
           style={{
             backgroundColor: isDragging ? 'rgba(0, 0, 0, 0.03)' : '#F9FAFB',
-            border: isDragging ? '1px dashed #000000' : '1px solid rgba(0, 0, 0, 0.04)',
+            border: sourceError ? '1px solid rgba(185, 28, 28, 0.35)' : isDragging ? '1px dashed #000000' : '1px solid rgba(0, 0, 0, 0.04)',
             borderRadius: '12px',
             minHeight: '210px',
             display: 'flex',
@@ -264,6 +297,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
             type="file"
             accept="video/mp4,video/quicktime,video/mov,video/webm,audio/mp3,audio/wav,audio/m4a"
             onChange={handleFileSelect}
+            disabled={isGenerating}
             style={{
               position: 'absolute',
               inset: 0,
@@ -272,7 +306,16 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
             }}
           />
 
-          {uploadedFileName ? (
+          {isGenerating ? (
+            <div aria-live="polite" style={{ textAlign: 'center', position: 'relative', zIndex: 2, width: 'min(320px, 80%)' }}>
+              <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 10px', color: '#111827' }} />
+              <p style={{ fontSize: 'var(--text-body)', fontWeight: 600, color: '#111827' }}>Preparing your dubbing project</p>
+              <p style={{ fontSize: 'var(--text-body)', color: 'rgba(0, 0, 0, 0.5)', marginTop: '3px' }}>
+                {uploadedFileName ? `Uploading ${uploadedFileName}` : 'Connecting to your video source'}
+              </p>
+              <div className="workspace-upload-progress" aria-hidden="true" />
+            </div>
+          ) : uploadedFileName ? (
             <div style={{ textAlign: 'center', position: 'relative', zIndex: 2 }}>
               <div
                 style={{
@@ -288,9 +331,9 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               >
                 <CheckCircle2 size={20} color="#16a34a" />
               </div>
-              <p style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>{uploadedFileName}</p>
-              <p style={{ fontSize: '12px', color: 'rgba(0, 0, 0, 0.5)', marginTop: '2px' }}>
-                File ready for dubbing
+              <p style={{ fontSize: 'var(--text-body)', fontWeight: 600, color: '#111827' }}>{uploadedFileName}</p>
+              <p style={{ fontSize: 'var(--text-body)', color: 'rgba(0, 0, 0, 0.5)', marginTop: '2px' }}>
+                Ready to dub{uploadedFile ? ` • ${formatFileSize(uploadedFile.size)}` : ''}
               </p>
               <button
                 type="button"
@@ -299,7 +342,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                 style={{
                   marginTop: '8px',
                   padding: '4px 10px',
-                  fontSize: '11.5px',
+                  fontSize: 'var(--text-control)',
                   color: 'rgba(0, 0, 0, 0.6)',
                 }}
               >
@@ -316,7 +359,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                   border: '1px solid rgba(0, 0, 0, 0.14)',
                   borderRadius: '8px',
                   padding: '7px 16px',
-                  fontSize: '13px',
+                  fontSize: 'var(--text-control)',
                   fontWeight: 600,
                   color: '#111827',
                   boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
@@ -324,7 +367,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               >
                 Select files
               </button>
-              <span style={{ fontSize: '13px', color: 'rgba(0, 0, 0, 0.45)' }}>
+              <span style={{ fontSize: 'var(--text-control)', color: 'rgba(0, 0, 0, 0.45)' }}>
                 or drag and drop them here
               </span>
             </div>
@@ -332,6 +375,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
         </div>
       ) : (
         <div
+          className="workspace-url-panel"
           style={{
             backgroundColor: '#F9FAFB',
             border: '1px solid rgba(0, 0, 0, 0.04)',
@@ -347,15 +391,16 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
         >
           <div style={{ width: '100%', maxWidth: '520px' }}>
             <label
+              htmlFor="workspace-media-url"
               style={{
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 color: '#111827',
                 marginBottom: '8px',
                 display: 'block',
               }}
             >
-              Paste video or audio URL
+              Paste a direct video or audio file URL
             </label>
             <div style={{ position: 'relative' }}>
               <LinkIcon
@@ -370,15 +415,20 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               />
               <input
                 type="url"
+                id="workspace-media-url"
+                aria-describedby="workspace-media-url-help"
                 value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=... or direct MP4"
+                onChange={(e) => {
+                  setVideoUrl(e.target.value);
+                  setSourceError(null);
+                }}
+                placeholder="https://cdn.example.com/video.mp4"
                 style={{
                   width: '100%',
                   padding: '10px 12px 10px 38px',
                   borderRadius: '8px',
                   border: '1px solid rgba(0, 0, 0, 0.15)',
-                  fontSize: '13.5px',
+                  fontSize: 'var(--text-input)',
                   backgroundColor: '#ffffff',
                   outline: 'none',
                 }}
@@ -403,15 +453,37 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                 </button>
               )}
             </div>
-            <p style={{ fontSize: '11.5px', color: 'rgba(0, 0, 0, 0.45)', marginTop: '6px' }}>
-              Supports YouTube, Vimeo, TikTok, or direct .mp4/.mp3 links
+            <p id="workspace-media-url-help" style={{ fontSize: 'var(--text-body)', color: 'rgba(0, 0, 0, 0.45)', marginTop: '6px' }}>
+              Use a public media file link, such as .mp4 or .mp3. YouTube, Vimeo, and TikTok page links cannot be imported.
             </p>
           </div>
         </div>
       )}
 
+      {sourceError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            margin: '-4px 0 14px',
+            padding: '9px 10px',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(185, 28, 28, 0.06)',
+            color: '#991b1b',
+            fontSize: 'var(--text-meta)',
+            fontWeight: 500,
+          }}
+        >
+          <AlertCircle size={15} />
+          <span>{sourceError}</span>
+        </div>
+      )}
+
       {/* Bottom Action Bar inside box: [Language selector] [Advanced] on left, [Arrow submit] on right */}
       <div
+        className="workspace-action-bar"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -419,11 +491,12 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           position: 'relative',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="workspace-actions-left" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Target Language Dropdown */}
           <div ref={langDropdownRef} style={{ position: 'relative' }}>
             <button
               type="button"
+              className="workspace-language-trigger"
               onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
               style={{
                 display: 'inline-flex',
@@ -434,7 +507,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                 border: '1px solid rgba(0, 0, 0, 0.1)',
                 backgroundColor: '#ffffff',
                 color: '#111827',
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 500,
                 cursor: 'pointer',
               }}
@@ -446,6 +519,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
 
             {isLangDropdownOpen && (
               <div
+                className="workspace-language-menu"
                 style={{
                   position: 'absolute',
                   bottom: '100%',
@@ -473,7 +547,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                       border: 'none',
                       backgroundColor: targetLanguage === l.code ? 'rgba(0, 0, 0, 0.05)' : 'transparent',
                       color: '#111827',
-                      fontSize: '12.5px',
+                      fontSize: 'var(--text-control)',
                       fontWeight: targetLanguage === l.code ? 600 : 400,
                       cursor: 'pointer',
                     }}
@@ -498,7 +572,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               border: 'none',
               backgroundColor: isAdvancedOpen ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
               color: 'rgba(0, 0, 0, 0.7)',
-              fontSize: '13px',
+              fontSize: 'var(--text-control)',
               fontWeight: 500,
               cursor: 'pointer',
             }}
@@ -514,8 +588,10 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
             type="button"
             onClick={handleSubmit}
             disabled={(!uploadedFileName && !videoUrl) || isGenerating}
+            className="workspace-submit-button"
+            aria-label={isGenerating ? 'Starting dubbing project' : 'Start dubbing project'}
             style={{
-              width: '38px',
+              width: 'auto',
               height: '38px',
               borderRadius: '8px',
               border: 'none',
@@ -524,11 +600,16 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              gap: '8px',
+              padding: '0 14px',
+              fontSize: 'var(--text-control)',
+              fontWeight: 700,
               cursor: (uploadedFileName || videoUrl) && !isGenerating ? 'pointer' : 'not-allowed',
               transition: 'all 140ms ease',
             }}
           >
             {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <ArrowUp size={18} strokeWidth={2.2} />}
+            <span>{isGenerating ? 'Starting...' : 'Start dubbing'}</span>
           </button>
         </div>
       </div>
@@ -536,6 +617,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
       {/* Advanced Options Drawer */}
       {isAdvancedOpen && (
         <div
+          className="workspace-advanced-panel"
           style={{
             marginTop: '14px',
             paddingTop: '14px',
@@ -549,7 +631,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           <div>
             <label
               style={{
-                fontSize: '11.5px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 color: 'rgba(0, 0, 0, 0.6)',
                 display: 'block',
@@ -568,14 +650,14 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                 padding: '6px 10px',
                 borderRadius: '6px',
                 border: '1px solid rgba(0, 0, 0, 0.12)',
-                fontSize: '12.5px',
+                fontSize: 'var(--text-input)',
               }}
             />
           </div>
           <div>
             <label
               style={{
-                fontSize: '11.5px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 color: 'rgba(0, 0, 0, 0.6)',
                 display: 'block',
@@ -592,7 +674,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                 padding: '6px 10px',
                 borderRadius: '6px',
                 border: '1px solid rgba(0, 0, 0, 0.12)',
-                fontSize: '12.5px',
+                fontSize: 'var(--text-input)',
                 backgroundColor: '#fff',
               }}
             >
@@ -606,7 +688,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           <div>
             <label
               style={{
-                fontSize: '11.5px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 color: 'rgba(0, 0, 0, 0.6)',
                 display: 'block',
@@ -621,7 +703,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
                 padding: '6px 10px',
                 borderRadius: '6px',
                 border: '1px solid rgba(0, 0, 0, 0.12)',
-                fontSize: '12.5px',
+                fontSize: 'var(--text-input)',
                 backgroundColor: '#fff',
               }}
             >

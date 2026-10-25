@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertCircle, RefreshCw, Home } from 'lucide-react';
+import * as Sentry from '@sentry/react';
 
 interface Props {
   children: ReactNode;
@@ -25,6 +26,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary caught error]:', error, errorInfo);
+    if (Sentry.isInitialized()) {
+      Sentry.captureException(error, { contexts: { react: { componentStack: errorInfo.componentStack } } });
+    }
     this.setState({ errorInfo });
   }
 
@@ -52,7 +56,7 @@ export class ErrorBoundary extends Component<Props, State> {
             backgroundColor: '#000000',
             color: '#FFFFFF',
             padding: '24px',
-            fontFamily: 'Inter, system-ui, sans-serif',
+            fontFamily: 'var(--font-sans)',
           }}
         >
           <div
@@ -85,7 +89,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <h1 style={{ fontSize: '22px', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '8px' }}>
               Something went wrong
             </h1>
-            <p style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.6)', lineHeight: 1.5, marginBottom: '24px' }}>
+            <p style={{ fontSize: 'var(--text-body)', color: 'rgba(255, 255, 255, 0.6)', lineHeight: 1.5, marginBottom: '24px' }}>
               An unexpected error occurred in the workspace. Your data in SQLite database is safely persisted.
             </p>
 
@@ -97,8 +101,8 @@ export class ErrorBoundary extends Component<Props, State> {
                   border: '1px solid rgba(255, 255, 255, 0.1)',
                   borderRadius: '8px',
                   padding: '12px 14px',
-                  fontSize: '12px',
-                  fontFamily: 'monospace',
+                  fontSize: 'var(--text-meta)',
+                  fontFamily: 'var(--font-sans)',
                   color: 'rgba(255, 255, 255, 0.7)',
                   overflowX: 'auto',
                   marginBottom: '24px',
@@ -122,7 +126,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   border: 'none',
                   borderRadius: '8px',
                   padding: '10px 20px',
-                  fontSize: '13.5px',
+                  fontSize: 'var(--text-control)',
                   fontWeight: 700,
                   cursor: 'pointer',
                 }}
@@ -143,7 +147,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   border: '1px solid rgba(255, 255, 255, 0.2)',
                   borderRadius: '8px',
                   padding: '10px 20px',
-                  fontSize: '13.5px',
+                  fontSize: 'var(--text-control)',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}

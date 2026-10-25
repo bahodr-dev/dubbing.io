@@ -1,43 +1,111 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Project } from '../../types';
-import { Play, Trash2 } from 'lucide-react';
+import { Play, Film } from 'lucide-react';
+import { formatDuration, formatDate, truncateProjectTitle } from '../../utils/formatters';
+import { ProjectProgress } from './ProjectProgress';
+import { ProjectActionsMenu } from './ProjectActionsMenu';
 
 interface ProjectCardProps {
   project: Project;
   onOpen: (project: Project) => void;
   onDelete: (projectId: string) => void;
+  onRename?: (project: Project) => void;
+  onRequestDelete?: (project: Project) => void;
 }
 
-export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onOpen, onDelete }) => {
+export const ProjectCard: React.FC<ProjectCardProps> = ({
+  project,
+  onOpen,
+  onDelete,
+  onRename,
+  onRequestDelete,
+}) => {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onOpen(project);
+    }
+  };
+
+  const getStatusBadgeClass = () => {
+    switch (project.status) {
+      case 'completed':
+        return 'badge-completed';
+      case 'processing':
+        return 'badge-processing';
+      case 'failed':
+        return 'badge-failed';
+      case 'draft':
+      default:
+        return 'badge-draft';
+    }
+  };
+
+  const handleDeleteTrigger = (proj: Project) => {
+    if (onRequestDelete) {
+      onRequestDelete(proj);
+    } else {
+      onDelete(proj.id);
+    }
+  };
+
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onOpen(project)}
-      className="card card-interactive"
+      onKeyDown={handleKeyDown}
+      className="card card-interactive project-card"
+      aria-label={`Open project ${project.title}`}
       style={{
         padding: 0,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        cursor: 'pointer',
+        position: 'relative',
+        minHeight: '328px',
       }}
     >
       {/* Thumbnail area */}
       <div
         style={{
           position: 'relative',
-          height: '160px',
+          aspectRatio: '16 / 9',
+          minHeight: '144px',
           backgroundColor: 'var(--black-10)',
           overflow: 'hidden',
         }}
       >
-        <img
-          src={project.thumbnailUrl}
-          alt={project.title}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-          }}
-        />
+        {!imageFailed && project.thumbnailUrl ? (
+          <img
+            src={project.thumbnailUrl}
+            alt=""
+            onError={() => setImageFailed(true)}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              color: 'var(--black-40)',
+            }}
+          >
+            <Film size={32} />
+          </div>
+        )}
 
         {/* Play overlay */}
         <div
@@ -70,13 +138,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onOpen, onDel
 
         {/* Status badge */}
         <span
-          className={`badge ${
-            project.status === 'completed'
-              ? 'badge-completed'
-              : project.status === 'processing'
-              ? 'badge-processing'
-              : 'badge-draft'
-          }`}
+          className={`badge ${getStatusBadgeClass()}`}
           style={{
             position: 'absolute',
             top: '10px',
@@ -93,36 +155,40 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onOpen, onDel
             position: 'absolute',
             bottom: '10px',
             right: '10px',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
             color: 'var(--c-white)',
           }}
         >
-          {Math.floor(project.duration)}s
+          {formatDuration(project.duration)}
         </span>
       </div>
 
       {/* Card Body */}
       <div
         style={{
-          padding: '16px',
+          padding: '14px 16px 12px',
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
+          gap: '10px',
         }}
       >
         <div>
           <h3
+            title={project.title}
             style={{
               fontSize: '15px',
               fontWeight: 700,
-              marginBottom: '6px',
+              minHeight: '18px',
+              marginBottom: '8px',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              color: '#111827',
             }}
           >
-            {project.title}
+            {truncateProjectTitle(project.title)}
           </h3>
 
           {/* Language pair */}
@@ -131,9 +197,9 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onOpen, onDel
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              fontSize: '12px',
+              fontSize: 'var(--text-meta)',
               color: 'var(--black-60)',
-              marginBottom: '12px',
+              minHeight: '18px',
             }}
           >
             <span style={{ fontWeight: 600, color: 'var(--c-black)' }}>
@@ -144,6 +210,13 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onOpen, onDel
               {project.targetLanguage === 'uz' ? 'Uzbek' : project.targetLanguage.toUpperCase()}
             </span>
           </div>
+
+          {/* Progress bar if processing */}
+          {project.status === 'processing' && (
+            <div style={{ marginTop: '12px' }}>
+              <ProjectProgress progress={project.processingProgress} />
+            </div>
+          )}
         </div>
 
         {/* Card Footer */}
@@ -153,28 +226,20 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onOpen, onDel
             alignItems: 'center',
             justifyContent: 'space-between',
             borderTop: 'var(--border-light)',
-            paddingTop: '12px',
-            marginTop: '4px',
+              paddingTop: '10px',
+            marginTop: 'auto',
           }}
         >
-          <span style={{ fontSize: '11px', color: 'var(--black-40)' }}>
-            {new Date(project.updatedAt).toLocaleDateString()}
+          <span style={{ fontSize: 'var(--text-meta)', color: 'var(--black-40)', fontFamily: 'var(--font-sans)' }}>
+            {formatDate(project.updatedAt)}
           </span>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm(`Delete project "${project.title}"?`)) {
-                onDelete(project.id);
-              }
-            }}
-            className="btn btn-ghost btn-sm"
-            style={{ padding: '4px', color: 'var(--black-40)' }}
-            title="Delete project"
-          >
-            <Trash2 size={14} />
-          </button>
+          <ProjectActionsMenu
+            project={project}
+            onOpen={onOpen}
+            onRename={onRename ? onRename : () => {}}
+            onDelete={handleDeleteTrigger}
+          />
         </div>
       </div>
     </div>

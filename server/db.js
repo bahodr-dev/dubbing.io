@@ -2,27 +2,65 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { applyMigrations, getPendingMigrations, migrationStatus } from './migrations/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure database directory exists
-const dbDir = path.join(__dirname, '..', 'database');
+// Tests supply an isolated runtime directory through environment variables so
+// they can never mutate a developer or production SQLite database.
+const configuredDbPath = process.env.DUBBING_DB_PATH;
+export const dbPath = configuredDbPath
+  ? path.resolve(configuredDbPath)
+  : path.join(__dirname, '..', 'database', 'dubbing.db');
+const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
 // Ensure uploads directory exists
-export const uploadsDir = path.join(__dirname, '..', 'uploads');
+export const uploadsDir = process.env.DUBBING_UPLOADS_DIR
+  ? path.resolve(process.env.DUBBING_UPLOADS_DIR)
+  : path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-const dbPath = path.join(dbDir, 'dubbing.db');
+const databaseExistedAtStartup = fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
 export const db = new Database(dbPath);
 
-// Enable WAL mode for high performance & concurrency
+// Enable WAL mode and foreign-key enforcement for concurrency and referential
+// integrity. SQLite leaves foreign keys off unless each connection enables it.
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');
+
+const migrationBackupDir = path.join(dbDir, 'backups');
+
+function pruneBackups() {
+  const keepCount = Math.max(1, Number.parseInt(process.env.DB_BACKUP_KEEP_COUNT || '14', 10) || 14);
+  const backups = fs.readdirSync(migrationBackupDir)
+    .filter((name) => name.startsWith('pre-migration-') && name.endsWith('.db'))
+    .map((name) => ({
+      path: path.join(migrationBackupDir, name),
+      mtime: fs.statSync(path.join(migrationBackupDir, name)).mtimeMs,
+    }))
+    .sort((a, b) => b.mtime - a.mtime);
+  for (const backup of backups.slice(keepCount)) fs.unlinkSync(backup.path);
+}
+
+function createMigrationBackup() {
+  fs.mkdirSync(migrationBackupDir, { recursive: true, mode: 0o700 });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const target = path.join(migrationBackupDir, `pre-migration-${timestamp}.db`);
+  db.prepare('VACUUM INTO ?').run(target);
+  pruneBackups();
+  return target;
+}
+
+export function getDatabaseMigrationStatus() {
+  return migrationStatus(db);
+}
 
 const INITIAL_VOICES = [
   {
@@ -149,6 +187,18 @@ const INITIAL_VOICES = [
 
 // Initialize database schema
 export function initDatabase() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  const pendingMigrations = getPendingMigrations(db);
+  let migrationBackupPath = null;
+  if (pendingMigrations.length > 0 && databaseExistedAtStartup && process.env.NODE_ENV !== 'test') {
+    migrationBackupPath = createMigrationBackup();
+  }
+
   // Users Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -156,6 +206,7 @@ export function initDatabase() {
       email TEXT UNIQUE NOT NULL,
       name TEXT,
       password_hash TEXT,
+      auth_version INTEGER NOT NULL DEFAULT 0,
       provider TEXT DEFAULT 'email',
       avatar_url TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -190,15 +241,36 @@ export function initDatabase() {
     )
   `);
 
-  // Auto-migrate schema for backward compatibility
-  try {
-    const userColumns = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
-    if (!userColumns.includes('updated_at')) {
-      db.exec(`ALTER TABLE users ADD COLUMN updated_at DATETIME`);
-    }
-  } catch (err) {
-    console.error('Migration error adding updated_at:', err);
-  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT UNIQUE NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used_at INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_password_reset_user
+      ON password_reset_tokens (user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_expiry
+      ON password_reset_tokens (expires_at);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS beta_invites (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      token_hash TEXT UNIQUE NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used_at INTEGER,
+      used_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (used_by) REFERENCES users (id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_beta_invites_email ON beta_invites (email, expires_at DESC);
+  `);
 
   // Projects Table
   db.exec(`
@@ -212,6 +284,10 @@ export function initDatabase() {
       original_language TEXT DEFAULT 'en',
       target_language TEXT DEFAULT 'uz',
       voice_id TEXT DEFAULT 'voice-farrux',
+      speaker_voices_json TEXT,
+      source_media_id TEXT,
+      output_media_id TEXT,
+      output_audio_media_id TEXT,
       status TEXT DEFAULT 'ready',
       duration REAL DEFAULT 0,
       file_size TEXT DEFAULT '12.4 MB',
@@ -222,22 +298,6 @@ export function initDatabase() {
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     )
   `);
-
-  // Auto-migrate schema for backward compatibility
-  try {
-    const projectColumns = db.prepare(`PRAGMA table_info(projects)`).all().map(c => c.name);
-    const requiredCols = [
-      { name: 'description', type: 'TEXT' },
-      { name: 'voice_id', type: "TEXT DEFAULT 'voice-farrux'" },
-      { name: 'file_size', type: "TEXT DEFAULT '12.4 MB'" },
-      { name: 'video_quality', type: "TEXT DEFAULT '1080p'" },
-    ];
-    for (const col of requiredCols) {
-      if (!projectColumns.includes(col.name)) {
-        db.exec(`ALTER TABLE projects ADD COLUMN ${col.name} ${col.type}`);
-      }
-    }
-  } catch (_) {}
 
     // Voices Table
     db.exec(`
@@ -289,9 +349,17 @@ export function initDatabase() {
         project_id TEXT,
         media_id TEXT,
         status TEXT DEFAULT 'queued',
+        progress INTEGER NOT NULL DEFAULT 10,
+        current_stage TEXT,
         language TEXT DEFAULT 'en',
+        provider_type TEXT DEFAULT 'auto',
         duration REAL DEFAULT 0,
         error TEXT,
+        attempt INTEGER NOT NULL DEFAULT 1,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        lease_owner TEXT,
+        lease_expires_at INTEGER,
+        last_heartbeat_at INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
@@ -302,6 +370,62 @@ export function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_transcription_jobs_user_id ON transcription_jobs (user_id);
       CREATE INDEX IF NOT EXISTS idx_transcription_jobs_project_id ON transcription_jobs (project_id);
       CREATE INDEX IF NOT EXISTS idx_transcription_jobs_status ON transcription_jobs (status);
+    `);
+
+    // Dubbing jobs persist progress and failures so users can safely retry a
+    // failed pipeline after a server restart.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS dubbing_jobs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT,
+        media_id TEXT,
+        status TEXT NOT NULL DEFAULT 'queued',
+        progress INTEGER NOT NULL DEFAULT 0,
+        current_stage TEXT,
+        error TEXT,
+        attempt INTEGER NOT NULL DEFAULT 1,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        params_json TEXT NOT NULL DEFAULT '{}',
+        result_json TEXT,
+        lease_owner TEXT,
+        lease_expires_at INTEGER,
+        last_heartbeat_at INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL,
+        FOREIGN KEY (media_id) REFERENCES media_assets (id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_dubbing_jobs_user_updated
+        ON dubbing_jobs (user_id, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_dubbing_jobs_project_id
+        ON dubbing_jobs (project_id);
+    `);
+
+    // One idempotent balance reservation per dubbing job. Minutes are held
+    // when work starts, consumed on success, and returned on terminal failure.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS minute_usage (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT,
+        job_id TEXT UNIQUE NOT NULL,
+        minutes REAL NOT NULL CHECK (minutes > 0),
+        status TEXT NOT NULL DEFAULT 'reserved'
+          CHECK (status IN ('reserved', 'consumed', 'refunded')),
+        balance_after_reservation REAL,
+        failure_reason TEXT,
+        reserved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        consumed_at DATETIME,
+        refunded_at DATETIME,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL,
+        FOREIGN KEY (job_id) REFERENCES dubbing_jobs (id) ON DELETE CASCADE
+      );
+
     `);
 
     // Transcript Segments Table (Fine-grained timestamped dialogue)
@@ -388,19 +512,32 @@ export function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_click_trans_order_id ON click_transactions (order_id);
     `);
 
-    // Auto-migrate user table for subscription plan and balance
-    try {
-      const userColumns = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
-      if (!userColumns.includes('plan')) {
-        db.exec(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'`);
-      }
-      if (!userColumns.includes('minutes_balance')) {
-        db.exec(`ALTER TABLE users ADD COLUMN minutes_balance REAL DEFAULT 5.0`);
-      }
-      if (!userColumns.includes('subscription_expires_at')) {
-        db.exec(`ALTER TABLE users ADD COLUMN subscription_expires_at DATETIME`);
-      }
-    } catch (_) {}
+    // The entitlement ledger makes gateway payment retries and refunds
+    // idempotent, rather than inferring credits from the mutable user balance.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS payment_credits (
+        order_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        minutes REAL NOT NULL,
+        previous_plan TEXT NOT NULL,
+        previous_subscription_expires_at DATETIME,
+        applied_plan TEXT NOT NULL,
+        applied_subscription_expires_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        reversed_at DATETIME,
+        FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_payment_credits_user_active
+        ON payment_credits (user_id, reversed_at);
+    `);
+
+  const appliedMigrations = applyMigrations(db, pendingMigrations);
+  if (appliedMigrations.length > 0) {
+    console.log(`🗃️ Applied database migrations: ${appliedMigrations.join(', ')}`);
+    if (migrationBackupPath) console.log(`🛟 Pre-migration backup: ${migrationBackupPath}`);
+  }
 
   // Seed default neural voices if table is empty
   const count = db.prepare('SELECT COUNT(*) as count FROM voices').get().count;

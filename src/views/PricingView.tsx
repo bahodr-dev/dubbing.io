@@ -1,30 +1,57 @@
 import React, { useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface PricingViewProps {
   onSelectPlan: (plan: string) => void;
+  embedded?: boolean;
 }
 
-export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
+export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan, embedded = false }) => {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const navigate = useNavigate();
 
   return (
-    <div style={{ backgroundColor: 'var(--c-white)', padding: '80px 0 100px' }}>
-      <div className="container-lg">
+    <div className={`pricing-page${embedded ? ' pricing-page-embedded' : ''}`} style={{ backgroundColor: 'var(--c-white)', padding: '40px 0 100px' }}>
+      <div className={embedded ? undefined : "container-lg"}>
+        {/* Back navigation button */}
+        {!embedded && <div style={{ marginBottom: '20px' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            className="btn btn-ghost btn-sm"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: 'var(--text-control)',
+              fontWeight: 600,
+              color: 'var(--black-60)',
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-pill)',
+              cursor: 'pointer',
+              border: 'var(--border-subtle)',
+            }}
+          >
+            <ArrowLeft size={15} />
+            <span>Back to Workspace</span>
+          </button>
+        </div>}
+
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '48px' }}>
-          <span className="mono" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)' }}>
+        <div className="pricing-hero" style={{ textAlign: 'center', marginBottom: '48px' }}>
+          <span className="mono" style={{ fontSize: 'var(--text-meta)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-40)' }}>
             PRICING PLANS
           </span>
-          <h1 style={{ fontSize: '48px', fontWeight: 800, letterSpacing: '-0.04em', marginTop: '8px', marginBottom: '16px' }}>
+          <h1 className="pricing-title" style={{ fontSize: '48px', fontWeight: 800, letterSpacing: '-0.04em', marginTop: '8px', marginBottom: '16px' }}>
             Predictable, transparent pricing.
           </h1>
-          <p style={{ fontSize: '18px', color: 'var(--black-60)', maxWidth: '520px', margin: '0 auto 32px' }}>
+          <p className="pricing-subtitle" style={{ fontSize: '18px', color: 'var(--black-60)', maxWidth: '520px', margin: '0 auto 32px' }}>
             Choose the plan that matches your production scale. Upgrade or cancel anytime.
           </p>
 
           {/* Billing Cycle Switcher */}
-          <div style={{
+          <div className="pricing-billing-toggle" style={{
             display: 'inline-flex',
             alignItems: 'center',
             backgroundColor: 'var(--black-05)',
@@ -38,7 +65,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
                 padding: '6px 18px',
                 border: 'none',
                 borderRadius: 'var(--radius-pill)',
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 background: billingCycle === 'monthly' ? 'var(--black-100)' : 'transparent',
                 color: billingCycle === 'monthly' ? 'var(--white-100)' : 'var(--black-70)',
@@ -54,7 +81,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
                 padding: '6px 18px',
                 border: 'none',
                 borderRadius: 'var(--radius-pill)',
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 background: billingCycle === 'yearly' ? 'var(--black-100)' : 'transparent',
                 color: billingCycle === 'yearly' ? 'var(--white-100)' : 'var(--black-70)',
@@ -68,7 +95,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
         </div>
 
         {/* 3 Tier Cards Grid */}
-        <div style={{
+        <div className="pricing-plans-grid" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
           gap: '24px',
@@ -79,23 +106,23 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             <div>
               <div style={{ marginBottom: '20px' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: 700 }}>Free</h3>
-                <p style={{ fontSize: '13px', color: 'var(--black-60)', marginTop: '4px' }}>
-                  For trying dubbing.io with short clips
+                <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginTop: '4px' }}>
+                  For trying dubla.uz with short clips
                 </p>
               </div>
 
               <div style={{ marginBottom: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                   <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em' }}>$0</span>
-                  <span style={{ fontSize: '13px', color: 'var(--black-40)' }}> / month</span>
+                  <span style={{ fontSize: 'var(--text-control)', color: 'var(--black-40)' }}> / month</span>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px', fontWeight: 600 }}>
+                <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)', marginTop: '2px', fontWeight: 600 }}>
                   0 UZS • Free Forever
                 </div>
               </div>
 
               <div style={{ borderTop: 'var(--border-light)', paddingTop: '20px', marginBottom: '24px' }}>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px', color: 'var(--black-80)' }}>
+                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: 'var(--text-body)', color: 'var(--black-80)' }}>
                   <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Check size={15} strokeWidth={2.5} /> 5 video minutes / month
                   </li>
@@ -137,7 +164,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
               transform: 'translateX(-50%)',
               backgroundColor: 'var(--white-100)',
               color: 'var(--black-100)',
-              fontSize: '11px',
+              fontSize: 'var(--text-meta)',
               fontWeight: 800,
               textTransform: 'uppercase',
               letterSpacing: '0.06em',
@@ -150,7 +177,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             <div>
               <div style={{ marginBottom: '20px' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--white-100)' }}>Creator</h3>
-                <p style={{ fontSize: '13px', color: 'var(--white-70)', marginTop: '4px' }}>
+                <p style={{ fontSize: 'var(--text-body)', color: 'var(--white-70)', marginTop: '4px' }}>
                   For individual creators & storytellers
                 </p>
               </div>
@@ -160,15 +187,15 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
                   <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--white-100)' }}>
                     {billingCycle === 'monthly' ? '$29' : '$23'}
                   </span>
-                  <span style={{ fontSize: '13px', color: 'var(--white-40)' }}> / month</span>
+                  <span style={{ fontSize: 'var(--text-control)', color: 'var(--white-40)' }}> / month</span>
                 </div>
-                <div style={{ fontSize: '13px', color: '#00C7B1', marginTop: '2px', fontWeight: 700 }}>
+                <div style={{ fontSize: 'var(--text-control)', color: '#00C7B1', marginTop: '2px', fontWeight: 700 }}>
                   {billingCycle === 'monthly' ? '375,000 UZS' : '295,000 UZS'} / oy (Payme / Click)
                 </div>
               </div>
 
               <div style={{ borderTop: 'var(--border-white-subtle)', paddingTop: '20px', marginBottom: '24px' }}>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px', color: 'var(--white-90)' }}>
+                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: 'var(--text-body)', color: 'var(--white-90)' }}>
                   <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Check size={15} strokeWidth={2.5} color="#ffffff" /> 60 video minutes / month
                   </li>
@@ -205,7 +232,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             <div>
               <div style={{ marginBottom: '20px' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: 700 }}>Pro Studio</h3>
-                <p style={{ fontSize: '13px', color: 'var(--black-60)', marginTop: '4px' }}>
+                <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginTop: '4px' }}>
                   For studios, agencies, and enterprises
                 </p>
               </div>
@@ -215,15 +242,15 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
                   <span style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em' }}>
                     {billingCycle === 'monthly' ? '$89' : '$71'}
                   </span>
-                  <span style={{ fontSize: '13px', color: 'var(--black-40)' }}> / month</span>
+                  <span style={{ fontSize: 'var(--text-control)', color: 'var(--black-40)' }}> / month</span>
                 </div>
-                <div style={{ fontSize: '13px', color: '#0073FF', marginTop: '2px', fontWeight: 700 }}>
+                <div style={{ fontSize: 'var(--text-control)', color: '#0073FF', marginTop: '2px', fontWeight: 700 }}>
                   {billingCycle === 'monthly' ? '1,150,000 UZS' : '915,000 UZS'} / oy (Payme / Click)
                 </div>
               </div>
 
               <div style={{ borderTop: 'var(--border-light)', paddingTop: '20px', marginBottom: '24px' }}>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px', color: 'var(--black-80)' }}>
+                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: 'var(--text-body)', color: 'var(--black-80)' }}>
                   <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Check size={15} strokeWidth={2.5} /> 300 video minutes / month
                   </li>
@@ -254,7 +281,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
         </div>
 
         {/* Extra Minutes Add-ons Section */}
-        <div style={{
+        <div className="pricing-addons" style={{
           backgroundColor: 'var(--black-02)',
           border: 'var(--border-light)',
           borderRadius: 'var(--radius-md)',
@@ -262,18 +289,18 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
           marginBottom: '64px',
         }}>
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-            <span className="mono" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-50)' }}>
+            <span className="mono" style={{ fontSize: 'var(--text-meta)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--black-50)' }}>
               INSTANT TOP-UP PACKS
             </span>
             <h3 style={{ fontSize: '22px', fontWeight: 800, marginTop: '4px', letterSpacing: '-0.02em' }}>
               Need extra minutes without changing your plan?
             </h3>
-            <p style={{ fontSize: '13.5px', color: 'var(--black-60)', marginTop: '4px' }}>
+            <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginTop: '4px' }}>
               Minutes never expire and are added directly to your active account balance.
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', maxWidth: '640px', margin: '0 auto' }}>
+          <div className="pricing-packs-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', maxWidth: '640px', margin: '0 auto' }}>
             <div style={{
               backgroundColor: '#FFFFFF',
               border: 'var(--border-light)',
@@ -285,8 +312,8 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             }}>
               <div>
                 <div style={{ fontSize: '16px', fontWeight: 700 }}>+30 Extra Minutes</div>
-                <div style={{ fontSize: '12.5px', color: 'var(--black-60)', marginTop: '2px' }}>One-time top up</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, margin: '12px 0 4px' }}>195,000 UZS <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--black-50)' }}>($15)</span></div>
+                <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)', marginTop: '2px' }}>One-time top up</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, margin: '12px 0 4px' }}>195,000 UZS <span style={{ fontSize: 'var(--text-control)', fontWeight: 500, color: 'var(--black-50)' }}>($15)</span></div>
               </div>
               <button
                 onClick={() => onSelectPlan('pack_30')}
@@ -308,8 +335,8 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             }}>
               <div>
                 <div style={{ fontSize: '16px', fontWeight: 700 }}>+100 Extra Minutes</div>
-                <div style={{ fontSize: '12.5px', color: 'var(--black-60)', marginTop: '2px' }}>Best value top up</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, margin: '12px 0 4px' }}>580,000 UZS <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--black-50)' }}>($45)</span></div>
+                <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)', marginTop: '2px' }}>Best value top up</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, margin: '12px 0 4px' }}>580,000 UZS <span style={{ fontSize: 'var(--text-control)', fontWeight: 500, color: 'var(--black-50)' }}>($45)</span></div>
               </div>
               <button
                 onClick={() => onSelectPlan('pack_100')}
@@ -328,8 +355,8 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
             Compare feature specifications
           </h3>
 
-          <div style={{ border: 'var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13.5px', textAlign: 'left' }}>
+          <div className="pricing-table-wrap" style={{ border: 'var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-control)', textAlign: 'left' }}>
               <thead>
                 <tr style={{ backgroundColor: 'var(--black-05)', borderBottom: 'var(--border-light)' }}>
                   <th style={{ padding: '14px 24px', fontWeight: 700 }}>Feature</th>
@@ -347,7 +374,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onSelectPlan }) => {
                   { name: 'Lip-sync accuracy algorithm', free: 'Basic', creator: 'Neural v2', pro: 'Ultra-Precision v3' },
                   { name: 'SRT Subtitle Export', free: '✓', creator: '✓', pro: '✓' },
                   { name: 'Commercial Rights License', free: '—', creator: '✓', pro: '✓' },
-                  { name: 'Custom Voice Cloning', free: '—', creator: '—', pro: '✓' },
+                  { name: 'Custom Voice Profiles', free: '—', creator: '—', pro: '✓' },
                 ].map((row, idx) => (
                   <tr
                     key={idx}

@@ -73,4 +73,13 @@ describe('Transcript Normalizer Unit Tests', () => {
       normalizeTranscript(null);
     }).toThrow(/must be an array/i);
   });
+
+  it('does not invent speaker identities for unlabeled segments', () => {
+    const result = normalizeTranscript([
+      { start: 0, end: 2, text: 'One' },
+      { start: 2, end: 4, text: 'Two' },
+    ]);
+
+    expect(result.segments.every((segment) => !Object.hasOwn(segment, 'speaker'))).toBe(true);
+  });
 });

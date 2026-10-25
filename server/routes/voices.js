@@ -1,18 +1,18 @@
 import { Router } from 'express';
-import { randomUUID } from 'crypto';
 import { db } from '../db.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateOptional, authenticateToken } from '../middleware/auth.js';
 
 export const voicesRouter = Router();
 
 // 1. GET ALL VOICES (with optional filtering)
-voicesRouter.get('/', (req, res) => {
+voicesRouter.get('/', authenticateOptional, (req, res) => {
   try {
     const { language, gender } = req.query;
 
     let query = 'SELECT * FROM voices';
     const params = [];
-    const conditions = [];
+    const conditions = ['(user_id IS NULL OR user_id = ?)'];
+    params.push(req.user?.id || '');
 
     if (language) {
       conditions.push('language_code = ?');
@@ -52,57 +52,10 @@ voicesRouter.get('/', (req, res) => {
   }
 });
 
-// 2. CLONE CUSTOM VOICE (Authenticated)
-voicesRouter.post('/clone', authenticateToken, (req, res) => {
-  try {
-    const { name, language, languageCode, gender, style, tone, tags, previewUrl } = req.body;
-
-    if (!name) {
-      return res.status(400).json({ error: 'Voice name is required.' });
-    }
-
-    const voiceId = `voice-custom-${randomUUID().slice(0, 8)}`;
-    const voiceLang = language || 'Uzbek';
-    const voiceLangCode = languageCode || 'uz';
-
-    db.prepare(`
-      INSERT INTO voices (
-        id, user_id, name, language, language_code, style, 
-        gender, tone, preview_url, tags_json, recommended, is_custom
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
-    `).run(
-      voiceId,
-      req.user.id,
-      name,
-      voiceLang,
-      voiceLangCode,
-      style || 'Natural',
-      gender || 'male',
-      tone || 'Custom cloned neural profile',
-      previewUrl || '',
-      tags ? JSON.stringify(tags) : JSON.stringify(['Custom', 'Cloned'])
-    );
-
-    const newVoice = db.prepare('SELECT * FROM voices WHERE id = ?').get(voiceId);
-
-    return res.status(201).json({
-      voice: {
-        id: newVoice.id,
-        name: newVoice.name,
-        language: newVoice.language,
-        languageCode: newVoice.language_code,
-        style: newVoice.style,
-        gender: newVoice.gender,
-        tone: newVoice.tone,
-        previewUrl: newVoice.preview_url,
-        tags: JSON.parse(newVoice.tags_json),
-        recommended: false,
-        isCustom: true,
-      },
-      message: 'Custom voice cloned successfully!',
-    });
-  } catch (err) {
-    console.error('Error cloning voice:', err);
-    return res.status(500).json({ error: 'Failed to clone voice.' });
-  }
+// Legacy endpoint created a profile without a real cloned voice. Keep an
+// explicit response so callers do not mistake that profile for a usable clone.
+voicesRouter.post('/clone', authenticateToken, (_req, res) => {
+  return res.status(410).json({
+    error: 'Standalone voice profiles are no longer created. Enable automatic voice cloning in the dubbing studio and confirm speaker permission.',
+  });
 });

@@ -40,6 +40,8 @@ export const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
 
   return (
     <div
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
       style={{
         pointerEvents: 'auto',
         width: '100%',
@@ -54,7 +56,7 @@ export const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '12px',
-        fontSize: '13.5px',
+        fontSize: 'var(--text-control)',
         animation: isExiting
           ? 'toastSlideOutTop 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards'
           : 'toastSlideInTop 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards',

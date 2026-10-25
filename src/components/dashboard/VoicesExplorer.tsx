@@ -30,8 +30,8 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
         gender,
         languageCode: langCode,
         sampleText: isUzbek
-          ? `Salom! Men ${voiceName}man. Dubbing nuqta io orqali istalgan videongizni tabiiy va professional ovozda tarjima qiling.`
-          : `Hello! I am ${voiceName}. Transform your videos into high-quality studio voices with Dubbing dot io.`,
+          ? `Salom! Men ${voiceName}man. dubla.uz orqali istalgan videongizni tabiiy va professional ovozda tarjima qiling.`
+          : `Hello! I am ${voiceName}. Transform your videos into high-quality studio voices with dubla.uz.`,
         onEnd: () => setPlayingVoiceId(null),
       });
     }
@@ -58,8 +58,8 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
           <h1 style={{ fontSize: '24px', fontWeight: 700, letterSpacing: '-0.01em' }}>
             Neural Voice Library
           </h1>
-          <p style={{ fontSize: '13.5px', color: 'rgba(0, 0, 0, 0.55)', marginTop: '3px' }}>
-            Audition studio-grade neural voice models or clone custom acoustic profiles
+          <p style={{ fontSize: 'var(--text-body)', color: 'rgba(0, 0, 0, 0.55)', marginTop: '3px' }}>
+            Audition studio-grade neural voice models and manage custom private voice profiles
           </p>
         </div>
 
@@ -69,7 +69,7 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
           style={{
             padding: '9px 18px',
             fontWeight: 600,
-            fontSize: '13.5px',
+            fontSize: 'var(--text-control)',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
@@ -103,7 +103,7 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
                 cursor: 'pointer',
                 textTransform: 'capitalize',
                 padding: '6px 14px',
-                fontSize: '12.5px',
+                fontSize: 'var(--text-control)',
                 fontWeight: selectedGender === g ? 600 : 500,
               }}
             >
@@ -132,7 +132,7 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
                 color: selectedLang === l.code ? 'var(--white-100)' : 'var(--black-60)',
                 cursor: 'pointer',
                 padding: '6px 14px',
-                fontSize: '12.5px',
+                fontSize: 'var(--text-control)',
                 fontWeight: selectedLang === l.code ? 600 : 500,
               }}
             >
@@ -196,7 +196,7 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
                       <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#111827' }}>
                         {voice.name}
                       </h3>
-                      <span style={{ fontSize: '12px', color: 'rgba(0, 0, 0, 0.5)' }}>
+                      <span style={{ fontSize: 'var(--text-meta)', color: 'rgba(0, 0, 0, 0.5)' }}>
                         {voice.language} • {voice.gender}
                       </span>
                     </div>
@@ -229,7 +229,7 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
 
                 <p
                   style={{
-                    fontSize: '12.5px',
+                    fontSize: 'var(--text-body)',
                     color: 'rgba(0, 0, 0, 0.65)',
                     lineHeight: 1.4,
                     marginBottom: '12px',
@@ -243,7 +243,7 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                 <span
                   style={{
-                    fontSize: '11px',
+                    fontSize: 'var(--text-meta)',
                     fontWeight: 600,
                     padding: '3px 8px',
                     borderRadius: '4px',
@@ -257,7 +257,7 @@ export const VoicesExplorer: React.FC<VoicesExplorerProps> = ({ voices, onOpenNe
                   <span
                     key={tag}
                     style={{
-                      fontSize: '11px',
+                      fontSize: 'var(--text-meta)',
                       padding: '3px 8px',
                       borderRadius: '4px',
                       backgroundColor: 'rgba(0, 0, 0, 0.03)',

@@ -5,6 +5,14 @@ import fs from 'fs';
 import { app } from '../app.js';
 import { db, uploadsDir } from '../db.js';
 
+function createTestMp4Buffer() {
+  const buffer = Buffer.alloc(64);
+  buffer.writeUInt32BE(32, 0);
+  buffer.write('ftypisom', 4);
+  buffer.write('FAKE_VIDEO_CONTENT_BYTE_STREAM_FOR_TESTING', 16);
+  return buffer;
+}
+
 describe('Private Media Storage & User Ownership (/api/media)', () => {
   let userACookie = '';
   let userBCookie = '';
@@ -18,24 +26,24 @@ describe('Private Media Storage & User Ownership (/api/media)', () => {
     const resA = await request(app)
       .post('/api/auth/signup')
       .send({
-        email: `media_usera_${Date.now()}@dubbing.io`,
+        email: `media_usera_${Date.now()}@dubla.uz`,
         password: 'Password123!',
         name: 'User A Media Owner',
       });
     const cookiesA = resA.headers['set-cookie'] || [];
-    userACookie = cookiesA.find((c) => c.includes('dubbing_session='));
+    userACookie = cookiesA.find((c) => c.includes('dubla_session='));
     userAId = resA.body.user.id;
 
     // 2. Create User B
     const resB = await request(app)
       .post('/api/auth/signup')
       .send({
-        email: `media_userb_${Date.now()}@dubbing.io`,
+        email: `media_userb_${Date.now()}@dubla.uz`,
         password: 'Password123!',
         name: 'User B Attacker',
       });
     const cookiesB = resB.headers['set-cookie'] || [];
-    userBCookie = cookiesB.find((c) => c.includes('dubbing_session='));
+    userBCookie = cookiesB.find((c) => c.includes('dubla_session='));
 
     // 3. User A creates a project
     const projRes = await request(app)
@@ -48,7 +56,7 @@ describe('Private Media Storage & User Ownership (/api/media)', () => {
   });
 
   it('1. Authenticated user (User A) can upload private media file', async () => {
-    const dummyBuffer = Buffer.from('FAKE_VIDEO_CONTENT_BYTE_STREAM_FOR_TESTING_123456');
+    const dummyBuffer = createTestMp4Buffer();
 
     const res = await request(app)
       .post('/api/media/upload')
@@ -72,7 +80,7 @@ describe('Private Media Storage & User Ownership (/api/media)', () => {
   });
 
   it('2. Unauthenticated upload fails with 401 Unauthorized', async () => {
-    const dummyBuffer = Buffer.from('FAKE_VIDEO_CONTENT');
+    const dummyBuffer = createTestMp4Buffer();
     const res = await request(app)
       .post('/api/media/upload')
       .attach('file', dummyBuffer, 'video.mp4');
@@ -125,12 +133,12 @@ describe('Private Media Storage & User Ownership (/api/media)', () => {
     const res = await request(app)
       .get(`/api/media/${userAMediaId}`)
       .set('Cookie', userACookie)
-      .set('Range', 'bytes=0-15')
+      .set('Range', 'bytes=16-31')
       .buffer(true);
 
     expect(res.status).toBe(206);
     expect(res.headers['accept-ranges']).toBe('bytes');
-    expect(res.headers['content-range']).toMatch(/^bytes 0-15\//);
+    expect(res.headers['content-range']).toMatch(/^bytes 16-31\//);
     expect(res.body.toString('utf-8')).toBe('FAKE_VIDEO_CONTE');
   });
 
@@ -181,8 +189,18 @@ describe('Private Media Storage & User Ownership (/api/media)', () => {
     expect(res.body.error).toMatch(/invalid file type/i);
   });
 
+  it('13b. Remote import rejects local-network URLs before making a request', async () => {
+    const res = await request(app)
+      .post('/api/media/import-url')
+      .set('Cookie', userACookie)
+      .send({ url: 'http://127.0.0.1/private-video.mp4' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/public internet host/i);
+  });
+
   it('14. User B CANNOT attach media to User A project', async () => {
-    const dummyBuffer = Buffer.from('UNAUTHORIZED_MEDIA');
+    const dummyBuffer = createTestMp4Buffer();
     const res = await request(app)
       .post('/api/media/upload')
       .set('Cookie', userBCookie)

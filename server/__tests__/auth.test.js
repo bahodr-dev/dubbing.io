@@ -3,7 +3,7 @@ import request from 'supertest';
 import { app } from '../app.js';
 
 describe('Auth API Routes (/api/auth)', () => {
-  const testEmail = `testuser_${Date.now()}@dubbing.io`;
+  const testEmail = `testuser_${Date.now()}@dubla.uz`;
   const testPassword = 'Password123!';
   let authCookie = '';
 
@@ -23,7 +23,7 @@ describe('Auth API Routes (/api/auth)', () => {
 
     // Verify session cookie attributes
     const cookies = res.headers['set-cookie'] || [];
-    const sessionCookie = cookies.find((c) => c.includes('dubbing_session='));
+    const sessionCookie = cookies.find((c) => c.includes('dubla_session='));
     expect(sessionCookie).toBeDefined();
     expect(sessionCookie).toMatch(/httponly/i);
     expect(sessionCookie).toMatch(/samesite=lax/i);
@@ -47,7 +47,7 @@ describe('Auth API Routes (/api/auth)', () => {
     const res = await request(app)
       .post('/api/auth/signup')
       .send({
-        email: 'shortpass@dubbing.io',
+        email: 'shortpass@dubla.uz',
         password: '123',
       });
 
@@ -67,7 +67,7 @@ describe('Auth API Routes (/api/auth)', () => {
     expect(res.body.user.email).toBe(testEmail.toLowerCase());
 
     const cookies = res.headers['set-cookie'] || [];
-    const sessionCookie = cookies.find((c) => c.includes('dubbing_session='));
+    const sessionCookie = cookies.find((c) => c.includes('dubla_session='));
     expect(sessionCookie).toBeDefined();
     expect(sessionCookie).toMatch(/httponly/i);
     authCookie = sessionCookie;
@@ -110,7 +110,7 @@ describe('Auth API Routes (/api/auth)', () => {
 
     // Cookie is cleared
     const cookies = res.headers['set-cookie'] || [];
-    const cleared = cookies.some((c) => c.includes('dubbing_session=;') || c.includes('Max-Age=0') || c.includes('Expires=Thu, 01 Jan 1970'));
+    const cleared = cookies.some((c) => c.includes('dubla_session=;') || c.includes('Max-Age=0') || c.includes('Expires=Thu, 01 Jan 1970'));
     expect(cleared).toBe(true);
   });
 });

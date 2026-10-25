@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { Project, ProcessingStep } from '../types';
 import { Check, Loader2, Sparkles, AlertCircle, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
+import { truncateProjectTitle } from '../utils/formatters';
 
 interface ProcessingViewProps {
   project: Project;
   jobId?: string | null;
   onComplete: (result?: any) => void;
   onError?: (errorMsg: string) => void;
-  onRetry?: () => void;
+  onRetry?: () => void | Promise<void>;
+  onMinutesBalanceChange?: (minutesBalance: number) => void;
 }
 
 const STAGES: ProcessingStep[] = [
@@ -26,13 +28,26 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
   onComplete,
   onError,
   onRetry,
+  onMinutesBalanceChange,
 }) => {
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [progressPercent, setProgressPercent] = useState(15);
   const [currentStageText, setCurrentStageText] = useState('Initializing AI Dubbing Pipeline...');
   const [jobError, setJobError] = useState<string | null>(null);
+  const [pollVersion, setPollVersion] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const isMountedRef = useRef(true);
+  const onCompleteRef = useRef(onComplete);
+  const onErrorRef = useRef(onError);
+
+  const onMinutesBalanceChangeRef = useRef(onMinutesBalanceChange);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+    onErrorRef.current = onError;
+    onMinutesBalanceChangeRef.current = onMinutesBalanceChange;
+  }, [onComplete, onError, onMinutesBalanceChange]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -44,9 +59,6 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
   // Poll real status from backend job queue
   useEffect(() => {
     if (!jobId) {
-      setCurrentStepIdx(0);
-      setProgressPercent(15);
-      setCurrentStageText('Initializing background pipeline...');
       return;
     }
 
@@ -62,6 +74,9 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
 
         const job = res?.job;
         if (!job) return;
+        if (typeof res.minutesBalance === 'number') {
+          onMinutesBalanceChangeRef.current?.(res.minutesBalance);
+        }
 
         if (typeof job.progress === 'number') {
           setProgressPercent(job.progress);
@@ -80,13 +95,15 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
           setCurrentStepIdx(3);
         } else if (job.status === 'synthesizing') {
           setCurrentStepIdx(4);
+        } else if (job.status === 'rendering') {
+          setCurrentStepIdx(5);
         } else if (job.status === 'completed') {
           setCurrentStepIdx(5);
           setProgressPercent(100);
           isPolling = false;
           setTimeout(() => {
             if (isMountedRef.current) {
-              onComplete(job.result);
+              onCompleteRef.current(job.result);
             }
           }, 500);
           return;
@@ -94,7 +111,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
           isPolling = false;
           const msg = job.error || 'Dubbing process encountered an error.';
           setJobError(msg);
-          if (onError) onError(msg);
+          onErrorRef.current?.(msg);
           return;
         }
       } catch (err: any) {
@@ -112,7 +129,26 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
       isPolling = false;
       if (timer) clearTimeout(timer);
     };
-  }, [jobId, onComplete, onError]);
+  }, [jobId, pollVersion]);
+
+  const handleRetry = async () => {
+    if (!onRetry || isRetrying) return;
+    setIsRetrying(true);
+    try {
+      await onRetry();
+      if (!isMountedRef.current) return;
+      setJobError(null);
+      setProgressPercent(0);
+      setCurrentStepIdx(0);
+      setCurrentStageText('Retry queued for AI dubbing...');
+      setPollVersion((version) => version + 1);
+    } catch {
+      // The parent displays the API error; keep the failed state available so
+      // the user can retry again after correcting the underlying issue.
+    } finally {
+      if (isMountedRef.current) setIsRetrying(false);
+    }
+  };
 
   return (
     <div style={{
@@ -132,7 +168,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
           padding: '5px 14px',
           border: 'var(--border-light)',
           borderRadius: 'var(--radius-pill)',
-          fontSize: '12px',
+          fontSize: 'var(--text-meta)',
           fontWeight: 600,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
@@ -145,8 +181,8 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
         <h2 style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.04em', marginBottom: '8px' }}>
           {jobError ? 'Dubbing Interrupted' : 'Creating your dub'}
         </h2>
-        <p style={{ fontSize: '15px', color: 'var(--black-60)' }}>
-          Transforming <span style={{ fontWeight: 600, color: 'var(--black-100)' }}>{project.title}</span> into {project.targetLanguage === 'uz' ? "Uzbek (O'zbek)" : project.targetLanguage.toUpperCase()}
+        <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)' }}>
+          Transforming <span title={project.title} style={{ fontWeight: 600, color: 'var(--black-100)' }}>{truncateProjectTitle(project.title)}</span> into {project.targetLanguage === 'uz' ? "Uzbek (O'zbek)" : project.targetLanguage.toUpperCase()}
         </p>
       </div>
 
@@ -164,18 +200,19 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
             <AlertCircle size={20} />
             <h4 style={{ fontSize: '16px', fontWeight: 700 }}>Processing Error</h4>
           </div>
-          <p style={{ fontSize: '14px', color: 'var(--black-70)', marginBottom: '20px' }}>
+          <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-70)', marginBottom: '20px' }}>
             {jobError}
           </p>
           {onRetry && (
             <button
               type="button"
-              onClick={onRetry}
+              onClick={handleRetry}
               className="btn btn-primary"
+              disabled={isRetrying}
               style={{ padding: '10px 20px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
             >
-              <RefreshCw size={14} />
-              Retry Dubbing
+              <RefreshCw size={14} style={isRetrying ? { animation: 'spin 1s linear infinite' } : undefined} />
+              {isRetrying ? 'Retrying...' : 'Retry Dubbing'}
             </button>
           )}
         </div>
@@ -184,7 +221,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
           {/* Numerical Progress Indicator */}
           <div style={{ marginBottom: '40px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--black-60)' }}>
+              <span style={{ fontSize: 'var(--text-control)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--black-60)' }}>
                 Processing Pipeline
               </span>
               <span className="mono" style={{ fontSize: '32px', fontWeight: 800, color: 'var(--black-100)' }}>
@@ -250,7 +287,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
                       ) : isCurrent ? (
                         <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                       ) : (
-                        <span style={{ fontSize: '10px', color: 'var(--black-40)' }}>{idx + 1}</span>
+                        <span style={{ fontSize: 'var(--text-meta)', color: 'var(--black-40)' }}>{idx + 1}</span>
                       )}
                     </div>
 
@@ -263,7 +300,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
                         {stage.label}
                       </div>
                       <div style={{
-                        fontSize: '12px',
+                        fontSize: 'var(--text-meta)',
                         color: isPending ? 'var(--black-30)' : 'var(--black-60)',
                         marginTop: '2px',
                       }}>
@@ -274,7 +311,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
 
                   <div>
                     {isDone && (
-                      <span className="mono" style={{ fontSize: '11px', color: 'var(--black-60)' }}>
+                      <span className="mono" style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)' }}>
                         Done
                       </span>
                     )}
@@ -296,9 +333,9 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
             padding: '16px 20px',
             borderRadius: 'var(--radius-md)',
             fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
+            fontSize: 'var(--text-meta)',
           }}>
-            <div style={{ color: 'var(--white-40)', marginBottom: '6px', fontSize: '11px' }}>
+            <div style={{ color: 'var(--white-40)', marginBottom: '6px', fontSize: 'var(--text-meta)' }}>
               LIVE NEURAL INFERENCE STATUS:
             </div>
             <div style={{ minHeight: '28px', lineHeight: 1.5 }}>

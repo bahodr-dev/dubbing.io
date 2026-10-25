@@ -42,7 +42,7 @@ export function cleanupTempFile(filePath) {
 }
 
 /**
- * Extracts audio from video/audio file into 16kHz mono WAV format suitable for Whisper / ASR
+ * Extracts audio into a compact 16kHz mono 64kbps MP3 suitable for ASR.
  *
  * @param {Object} options
  * @param {string} options.inputFilePath - Absolute path to input media file
@@ -61,7 +61,7 @@ export async function extractAudioFromMedia({
     throw new Error('Input media file does not exist on disk.');
   }
 
-  const outputFilename = `extract-${Date.now()}-${randomUUID().slice(0, 8)}.wav`;
+  const outputFilename = `extract-${Date.now()}-${randomUUID().slice(0, 8)}.mp3`;
   const outputFilePath = path.join(TEMP_DIR, outputFilename);
 
   // FFmpeg arguments safely passed as array (no shell interpolation)
@@ -71,8 +71,9 @@ export async function extractAudioFromMedia({
     '-vn',                    // Disable video recording / extraction
     '-ac', String(channels),  // Set number of audio channels (1 = mono)
     '-ar', String(sampleRate),// Set audio sampling rate (16000 Hz)
-    '-c:a', 'pcm_s16le',      // 16-bit uncompressed PCM WAV
-    '-f', 'wav',              // WAV container format
+    '-c:a', 'libmp3lame',     // broadly supported compressed audio
+    '-b:a', '64k',            // 15 minutes stays well below provider preflight limit
+    '-f', 'mp3',
     outputFilePath,
   ];
 
@@ -137,6 +138,7 @@ export async function extractAudioFromMedia({
         audioFilePath: outputFilePath,
         sampleRate,
         channels,
+        bitrateKbps: 64,
         cleanup: () => cleanupTempFile(outputFilePath),
       });
     });

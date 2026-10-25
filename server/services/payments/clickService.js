@@ -1,6 +1,7 @@
+import { isPaymentProviderConfigured } from './paymentConfig.js';
 import crypto, { randomUUID } from 'crypto';
 import { db } from '../../db.js';
-import * as userRepository from '../../repositories/userRepository.js';
+import { applyPaymentCredit } from '../../repositories/paymentCreditRepository.js';
 
 export const ClickError = {
   SUCCESS: 0,
@@ -15,200 +16,117 @@ export const ClickError = {
   TRANSACTION_CANCELLED: -9,
 };
 
+// Keep the original scalar values for the provider's signature; validate money
+// separately in integer tiyin, without parseFloat accepting trailing garbage.
+function amountInTiyin(value) {
+  const text = String(value ?? '');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return null;
+  const amount = Number(text) * 100;
+  const rounded = Math.round(amount);
+  return Number.isSafeInteger(rounded) && rounded > 0 && Math.abs(amount - rounded) < 0.000001 ? rounded : null;
+}
+
 export function verifyClickSignature(params) {
-  const {
-    click_trans_id,
-    service_id,
-    merchant_trans_id,
-    merchant_prepare_id,
-    amount,
-    action,
-    sign_time,
-    sign_string,
-  } = params;
-
-  const secretKey = process.env.CLICK_SECRET_KEY || 'dubbing_click_test_secret_key_2026';
-
-  let rawString = '';
-  if (parseInt(action, 10) === 1) {
-    // Complete
-    rawString = `${click_trans_id}${service_id}${secretKey}${merchant_trans_id}${merchant_prepare_id || merchant_trans_id}${amount}${action}${sign_time}`;
-  } else {
-    // Prepare
-    rawString = `${click_trans_id}${service_id}${secretKey}${merchant_trans_id}${amount}${action}${sign_time}`;
-  }
-
-  const calculatedMd5 = crypto.createHash('md5').update(rawString).digest('hex');
-  return calculatedMd5.toLowerCase() === (sign_string || '').toLowerCase();
+  if (!isPaymentProviderConfigured('click')) return false;
+  if (!params || typeof params !== 'object') return false;
+  const fields = ['click_trans_id', 'service_id', 'merchant_trans_id', 'amount', 'action', 'sign_time'];
+  if (String(params.action) === '1') fields.push('merchant_prepare_id');
+  if (!fields.every((key) => ['string', 'number'].includes(typeof params[key]) && String(params[key]).length > 0)) return false;
+  if (!/^[0-9a-f]{32}$/i.test(params.sign_string || '')) return false;
+  const secret = process.env.CLICK_SECRET_KEY || (process.env.NODE_ENV === 'test' ? 'dubbing_click_test_secret_key_2026' : null);
+  if (!secret) return false;
+  if (process.env.CLICK_SERVICE_ID && String(params.service_id) !== process.env.CLICK_SERVICE_ID) return false;
+  const { click_trans_id, service_id, merchant_trans_id, merchant_prepare_id, amount, action, sign_time } = params;
+  const raw = `${click_trans_id}${service_id}${secret}${merchant_trans_id}${String(action) === '1' ? merchant_prepare_id : ''}${amount}${action}${sign_time}`;
+  const digest = crypto.createHash('md5').update(raw).digest();
+  return crypto.timingSafeEqual(digest, Buffer.from(params.sign_string, 'hex'));
 }
 
 export function generateClickCheckoutUrl({ orderId, amountUzs, returnUrl }) {
-  const serviceId = process.env.CLICK_SERVICE_ID || '32847';
-  const merchantId = process.env.CLICK_MERCHANT_ID || '24561';
-  const appUrl = returnUrl || `${process.env.APP_URL || 'http://localhost:5173'}/dashboard?payment=success`;
-
-  return `https://my.click.uz/services/pay?service_id=${serviceId}&merchant_id=${merchantId}&amount=${amountUzs}&transaction_param=${orderId}&return_url=${encodeURIComponent(appUrl)}`;
+  const serviceId = process.env.CLICK_SERVICE_ID || (process.env.NODE_ENV === 'test' ? '32847' : '');
+  const merchantId = process.env.CLICK_MERCHANT_ID || (process.env.NODE_ENV === 'test' ? '24561' : '');
+  const url = new URL('https://my.click.uz/services/pay');
+  url.search = new URLSearchParams({
+    service_id: serviceId, merchant_id: merchantId, amount: String(amountUzs),
+    transaction_param: orderId,
+    return_url: returnUrl || `${process.env.APP_URL || 'http://localhost:5173'}/dashboard`,
+  }).toString();
+  return url.toString();
 }
 
-export async function handleClickPrepare(params) {
-  const {
-    click_trans_id,
-    service_id,
-    merchant_trans_id, // order_id
-    amount,
-    action,
-    sign_time,
-    error,
-  } = params;
-
-  // 1. Signature verification
-  if (!verifyClickSignature(params)) {
-    return {
-      error: ClickError.SIGN_CHECK_FAILED,
-      error_note: 'SIGN CHECK FAILED!',
-    };
-  }
-
-  if (parseInt(error, 10) < 0) {
-    return {
-      error: ClickError.REQUEST_ERROR,
-      error_note: 'Request error from Click',
-    };
-  }
-
-  // 2. Validate order
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(merchant_trans_id);
-  if (!order) {
-    return {
-      error: ClickError.ORDER_NOT_FOUND,
-      error_note: 'Order not found',
-    };
-  }
-
-  // Check amount
-  const parsedAmount = parseFloat(amount);
-  if (Math.abs(parsedAmount - order.amount_uzs) > 0.01) {
-    return {
-      error: ClickError.INVALID_AMOUNT,
-      error_note: 'Incorrect amount',
-    };
-  }
-
-  if (order.status === 'completed') {
-    return {
-      error: ClickError.ALREADY_PAID,
-      error_note: 'Order already paid',
-    };
-  }
-
-  // 3. Record click prepare transaction
-  const existing = db.prepare('SELECT * FROM click_transactions WHERE click_trans_id = ?').get(click_trans_id);
-  if (!existing) {
-    db.prepare(`
-      INSERT INTO click_transactions (id, click_trans_id, service_id, order_id, merchant_trans_id, amount, action, sign_time, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'prepare')
-    `).run(randomUUID(), click_trans_id, service_id, order.id, merchant_trans_id, parsedAmount, action, sign_time);
-  }
-
-  return {
-    click_trans_id,
-    merchant_trans_id,
-    merchant_prepare_id: merchant_trans_id,
-    error: ClickError.SUCCESS,
-    error_note: 'Success',
-  };
+function failure(params, error, error_note) {
+  return { click_trans_id: params?.click_trans_id, merchant_trans_id: params?.merchant_trans_id, error, error_note };
 }
 
-export async function handleClickComplete(params) {
-  const {
-    click_trans_id,
-    service_id,
-    merchant_trans_id, // order_id
-    merchant_prepare_id,
-    amount,
-    action,
-    sign_time,
-    error,
-  } = params;
-
-  // 1. Signature verification
-  if (!verifyClickSignature(params)) {
-    return {
-      error: ClickError.SIGN_CHECK_FAILED,
-      error_note: 'SIGN CHECK FAILED!',
-    };
+function validateCallback(params, expectedAction) {
+  if (!verifyClickSignature(params)) return failure(params, ClickError.SIGN_CHECK_FAILED, 'SIGN CHECK FAILED!');
+  if (String(params.action) !== String(expectedAction)) return failure(params, ClickError.ACTION_NOT_FOUND, 'Action not found');
+  if (amountInTiyin(params.amount) === null || (params.error !== undefined && !/^-?\d+$/.test(String(params.error)))) {
+    return failure(params, ClickError.REQUEST_ERROR, 'Invalid request parameters');
   }
+  return null;
+}
 
-  const orderId = merchant_prepare_id || merchant_trans_id;
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+export function handleClickPrepare(params) {
+  const invalid = validateCallback(params, 0);
+  if (invalid) return invalid;
+  return db.transaction(() => {
+    if (Number(params.error || 0) !== 0) return failure(params, ClickError.REQUEST_ERROR, 'Request error from Click');
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(params.merchant_trans_id);
+    if (!order) return failure(params, ClickError.ORDER_NOT_FOUND, 'Order not found');
+    if (order.provider !== 'click') return failure(params, ClickError.REQUEST_ERROR, 'Order belongs to another payment provider');
+    if (amountInTiyin(params.amount) !== Math.round(order.amount_uzs * 100)) return failure(params, ClickError.INVALID_AMOUNT, 'Incorrect amount');
+    if (order.status === 'completed') return failure(params, ClickError.ALREADY_PAID, 'Order already paid');
+    if (order.status !== 'pending') return failure(params, ClickError.TRANSACTION_CANCELLED, 'Order is cancelled');
+    const existing = db.prepare('SELECT * FROM click_transactions WHERE click_trans_id = ?').get(params.click_trans_id);
+    if (existing && (existing.order_id !== order.id || existing.service_id !== String(params.service_id) || Math.round(existing.amount * 100) !== amountInTiyin(params.amount))) {
+      return failure(params, ClickError.REQUEST_ERROR, 'Transaction parameters do not match');
+    }
+    if (existing?.status === 'cancelled') return failure(params, ClickError.TRANSACTION_CANCELLED, 'Transaction cancelled');
+    let prepareId = existing?.prepare_id ?? existing?.order_id;
+    if (!existing) {
+      prepareId = db.prepare('SELECT COALESCE(MAX(prepare_id), 0) + 1 AS next FROM click_transactions').get().next;
+      const active = db.prepare("SELECT id FROM click_transactions WHERE order_id = ? AND status = 'prepare'").get(order.id);
+      if (active) return failure(params, ClickError.REQUEST_ERROR, 'Another transaction is in progress');
+      db.prepare(`INSERT INTO click_transactions (id, click_trans_id, service_id, order_id, merchant_trans_id, amount, action, sign_time, prepare_id, status)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 'prepare')`)
+        .run(randomUUID(), params.click_trans_id, String(params.service_id), order.id, order.id, Number(params.amount), params.sign_time, prepareId);
+    }
+    return { click_trans_id: params.click_trans_id, merchant_trans_id: order.id, merchant_prepare_id: prepareId, error: 0, error_note: 'Success' };
+  }).immediate();
+}
 
-  if (!order) {
-    return {
-      error: ClickError.ORDER_NOT_FOUND,
-      error_note: 'Order not found',
-    };
-  }
-
-  // Handle cancelled by user or Click
-  if (parseInt(error, 10) < 0) {
-    db.prepare(`UPDATE orders SET status = 'cancelled' WHERE id = ?`).run(order.id);
-    db.prepare(`UPDATE click_transactions SET status = 'cancelled', error = ? WHERE click_trans_id = ?`)
-      .run(error, click_trans_id);
-
-    return {
-      error: ClickError.TRANSACTION_CANCELLED,
-      error_note: 'Transaction cancelled',
-    };
-  }
-
-  // If already completed (Idempotency)
-  if (order.status === 'completed') {
-    return {
-      click_trans_id,
-      merchant_trans_id,
-      merchant_confirm_id: order.id,
-      error: ClickError.SUCCESS,
-      error_note: 'Already completed',
-    };
-  }
-
-  // Validate amount
-  const parsedAmount = parseFloat(amount);
-  if (Math.abs(parsedAmount - order.amount_uzs) > 0.01) {
-    return {
-      error: ClickError.INVALID_AMOUNT,
-      error_note: 'Incorrect amount',
-    };
-  }
-
-  // 2. Mark order completed
-  db.prepare(`UPDATE orders SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(order.id);
-
-  // Update click transactions record
-  const existingTrans = db.prepare('SELECT * FROM click_transactions WHERE click_trans_id = ?').get(click_trans_id);
-  if (existingTrans) {
-    db.prepare(`UPDATE click_transactions SET status = 'completed', action = ?, sign_time = ? WHERE click_trans_id = ?`)
-      .run(action, sign_time, click_trans_id);
-  } else {
-    db.prepare(`
-      INSERT INTO click_transactions (id, click_trans_id, service_id, order_id, merchant_trans_id, amount, action, sign_time, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed')
-    `).run(randomUUID(), click_trans_id, service_id, order.id, merchant_trans_id, parsedAmount, action, sign_time);
-  }
-
-  // 3. Credit user subscription and minutes!
-  const planTier = order.plan_id === 'pro' ? 'pro' : (order.plan_id === 'creator' ? 'creator' : 'free');
-  userRepository.creditSubscription(order.user_id, {
-    plan: planTier,
-    minutesToAdd: order.minutes_credited,
-    durationDays: order.billing_cycle === 'yearly' ? 365 : 30,
-  });
-
-  return {
-    click_trans_id,
-    merchant_trans_id,
-    merchant_confirm_id: order.id,
-    error: ClickError.SUCCESS,
-    error_note: 'Success',
-  };
+export function handleClickComplete(params) {
+  const invalid = validateCallback(params, 1);
+  if (invalid) return invalid;
+  return db.transaction(() => {
+    const trans = db.prepare('SELECT * FROM click_transactions WHERE click_trans_id = ?').get(params.click_trans_id);
+    if (!trans) return failure(params, ClickError.TRANSACTION_NOT_FOUND, 'Prepare transaction not found');
+    if (trans.order_id !== params.merchant_trans_id || String(trans.prepare_id ?? trans.order_id) !== String(params.merchant_prepare_id) || trans.service_id !== String(params.service_id)) {
+      return failure(params, ClickError.TRANSACTION_NOT_FOUND, 'Prepare transaction does not match');
+    }
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(trans.order_id);
+    if (!order) return failure(params, ClickError.ORDER_NOT_FOUND, 'Order not found');
+    if (order.provider !== 'click') return failure(params, ClickError.REQUEST_ERROR, 'Order belongs to another payment provider');
+    if (amountInTiyin(params.amount) !== Math.round(order.amount_uzs * 100) || amountInTiyin(params.amount) !== Math.round(trans.amount * 100)) {
+      return failure(params, ClickError.INVALID_AMOUNT, 'Incorrect amount');
+    }
+    // A delayed failure must never undo an already delivered successful payment.
+    if (trans.status === 'completed') {
+      if (Number(params.error || 0) !== 0) return failure(params, ClickError.ALREADY_PAID, 'Order already paid');
+      applyPaymentCredit(order.id);
+      return { click_trans_id: params.click_trans_id, merchant_trans_id: order.id, merchant_confirm_id: trans.prepare_id ?? order.id, error: 0, error_note: 'Already completed' };
+    }
+    if (trans.status === 'cancelled' || order.status !== 'pending') return failure(params, ClickError.TRANSACTION_CANCELLED, 'Transaction cancelled');
+    if (Number(params.error || 0) < 0) {
+      db.prepare("UPDATE click_transactions SET status = 'cancelled', error = ? WHERE id = ?").run(Number(params.error), trans.id);
+      db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(order.id);
+      return failure(params, ClickError.TRANSACTION_CANCELLED, 'Transaction cancelled');
+    }
+    if (Number(params.error || 0) !== 0) return failure(params, ClickError.REQUEST_ERROR, 'Invalid payment status');
+    db.prepare("UPDATE orders SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
+    db.prepare("UPDATE click_transactions SET status = 'completed', action = 1, sign_time = ? WHERE id = ?").run(params.sign_time, trans.id);
+    applyPaymentCredit(order.id);
+    return { click_trans_id: params.click_trans_id, merchant_trans_id: order.id, merchant_confirm_id: trans.prepare_id ?? order.id, error: 0, error_note: 'Success' };
+  }).immediate();
 }

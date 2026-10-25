@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import crypto from 'crypto';
 import { app } from '../app.js';
+import { db } from '../db.js';
 
 describe('Payments API & Merchant Integrations (/api/payments)', () => {
   let userCookie = '';
@@ -13,7 +14,7 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
   const clickSecret = process.env.CLICK_SECRET_KEY || 'dubbing_click_test_secret_key_2026';
 
   beforeAll(async () => {
-    userEmail = `pay_user_${Date.now()}@dubbing.io`;
+    userEmail = `pay_user_${Date.now()}@dubla.uz`;
     const res = await request(app)
       .post('/api/auth/signup')
       .send({
@@ -22,7 +23,7 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
         name: 'Payment Tester',
       });
     const cookies = res.headers['set-cookie'] || [];
-    userCookie = cookies.find((c) => c.includes('dubbing_session='));
+    userCookie = cookies.find((c) => c.includes('dubla_session='));
     userId = res.body.user.id;
   });
 
@@ -154,10 +155,42 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
       expect(res.body.result.state).toBe(2);
       expect(res.body.result.perform_time).toBeGreaterThan(0);
     });
+
+    it('reconciles a completed Payme transaction if its entitlement write was interrupted', async () => {
+      db.prepare('DELETE FROM payment_credits WHERE order_id = ?').run(orderId);
+      db.prepare('UPDATE users SET plan = ?, minutes_balance = ?, subscription_expires_at = NULL WHERE id = ?')
+        .run('free', 5, userId);
+
+      const retry = await request(app)
+        .post('/api/payments/payme')
+        .set('Authorization', paymeAuth)
+        .send({ id: 51, method: 'PerformTransaction', params: { id: paymeTransId } });
+
+      expect(retry.body.result.state).toBe(2);
+      const user = db.prepare('SELECT plan, minutes_balance FROM users WHERE id = ?').get(userId);
+      expect(user.plan).toBe('creator');
+      expect(user.minutes_balance).toBe(65);
+      expect(db.prepare('SELECT COUNT(*) AS count FROM payment_credits WHERE order_id = ?').get(orderId).count).toBe(1);
+    });
+
+    it('POST /api/payments/payme - CancelTransaction reverses the credited entitlement', async () => {
+      const res = await request(app)
+        .post('/api/payments/payme')
+        .set('Authorization', paymeAuth)
+        .send({ id: 6, method: 'CancelTransaction', params: { id: paymeTransId, reason: 1 } });
+
+      expect(res.status).toBe(200);
+      expect(res.body.result.state).toBe(-2);
+
+      const meRes = await request(app).get('/api/auth/me').set('Cookie', userCookie);
+      expect(meRes.body.user.plan).toBe('free');
+      expect(meRes.body.user.minutesBalance).toBe(5);
+    });
   });
 
   describe('Click Merchant SHOP API Flow', () => {
     let clickOrderId = '';
+    let clickPrepareId;
     const clickTransId = `click-trans-${Date.now()}`;
     const clickServiceId = '32847';
     const clickAmount = 1150000; // Pro monthly in UZS
@@ -173,6 +206,25 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
           provider: 'click',
         });
       clickOrderId = res.body.order.id;
+    });
+
+    it('rejects a validly signed Click callback for an order assigned to Payme', async () => {
+      const foreignTransId = `click-cross-provider-${Date.now()}`;
+      const signTime = '2026-09-02 11:59:00';
+      const amount = 375000;
+      const signString = crypto.createHash('md5')
+        .update(`${foreignTransId}${clickServiceId}${clickSecret}${orderId}${amount}0${signTime}`)
+        .digest('hex');
+      const res = await request(app).post('/api/payments/click/prepare').send({
+        click_trans_id: foreignTransId,
+        service_id: clickServiceId,
+        merchant_trans_id: orderId,
+        amount,
+        action: 0,
+        sign_time: signTime,
+        sign_string: signString,
+      });
+      expect(res.body.error).toBe(-8);
     });
 
     it('POST /api/payments/click/prepare - rejects with invalid signature', async () => {
@@ -211,12 +263,13 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.error).toBe(0);
-      expect(res.body.merchant_prepare_id).toBe(clickOrderId);
+      expect(res.body.merchant_prepare_id).toBeTypeOf('number');
+      clickPrepareId = res.body.merchant_prepare_id;
     });
 
     it('POST /api/payments/click/complete - confirms payment and upgrades plan to Pro', async () => {
       const signTime = '2026-09-02 12:00:05';
-      const rawString = `${clickTransId}${clickServiceId}${clickSecret}${clickOrderId}${clickOrderId}${clickAmount}1${signTime}`;
+      const rawString = `${clickTransId}${clickServiceId}${clickSecret}${clickOrderId}${clickPrepareId}${clickAmount}1${signTime}`;
       const signString = crypto.createHash('md5').update(rawString).digest('hex');
 
       const res = await request(app)
@@ -225,7 +278,7 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
           click_trans_id: clickTransId,
           service_id: clickServiceId,
           merchant_trans_id: clickOrderId,
-          merchant_prepare_id: clickOrderId,
+          merchant_prepare_id: clickPrepareId,
           amount: clickAmount,
           action: 1,
           sign_time: signTime,
@@ -234,7 +287,7 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.error).toBe(0);
-      expect(res.body.merchant_confirm_id).toBe(clickOrderId);
+      expect(res.body.merchant_confirm_id).toBe(clickPrepareId);
 
       // Verify user subscription is upgraded to Pro
       const meRes = await request(app)
@@ -243,7 +296,7 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
 
       expect(meRes.status).toBe(200);
       expect(meRes.body.user.plan).toBe('pro');
-      expect(meRes.body.user.minutesBalance).toBeGreaterThanOrEqual(365); // 65 + 300
+      expect(meRes.body.user.minutesBalance).toBeGreaterThanOrEqual(305); // 5 free + 300 pro (Payme credit was refunded)
     });
   });
 
@@ -267,7 +320,23 @@ describe('Payments API & Merchant Integrations (/api/payments)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.order.status).toBe('completed');
-      expect(res.body.user.minutesBalance).toBeGreaterThanOrEqual(465); // previous + 100
+      expect(res.body.user.minutesBalance).toBeGreaterThanOrEqual(405); // previous + 100
     });
+  });
+
+  it('POST /api/payments/simulate-success is unavailable in production', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+
+    try {
+      const res = await request(app)
+        .post('/api/payments/simulate-success')
+        .set('Cookie', userCookie)
+        .send({ orderId });
+
+      expect(res.status).toBe(404);
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
   });
 });

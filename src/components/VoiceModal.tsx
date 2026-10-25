@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import type { Voice } from '../types';
 import { VOICES } from '../data/voices';
 import { Waveform } from './Waveform';
@@ -10,38 +11,33 @@ interface VoiceModalProps {
   onSelectVoice: (voice: Voice) => void;
   onClose: () => void;
   filterLanguageCode?: string;
+  renderableVoiceIds?: string[] | null;
 }
 
-export const VoiceModal: React.FC<VoiceModalProps> = ({
+const VoiceModalContent: React.FC<VoiceModalProps> = ({
   isOpen,
   selectedVoiceId,
   onSelectVoice,
   onClose,
   filterLanguageCode,
+  renderableVoiceIds,
 }) => {
   const [activeTab, setActiveTab] = useState<string>(filterLanguageCode || 'all');
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ isOpen, dialogRef, onClose });
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        stopVoiceSample();
-        onClose();
-      }
-    };
-    if (isOpen) {
-      window.addEventListener('keydown', handleKeyDown);
-    }
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
       stopVoiceSample();
     };
-  }, [isOpen, onClose]);
+  }, []);
 
   if (!isOpen) return null;
 
   const filteredVoices = VOICES.filter(voice => {
+    if (renderableVoiceIds && !renderableVoiceIds.includes(voice.id)) return false;
     const matchesLang = activeTab === 'all' || voice.languageCode === activeTab;
     const matchesSearch = voice.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           voice.language.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -75,19 +71,25 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
     <div className="modal-overlay" onClick={() => { stopVoiceSample(); onClose(); }}>
       <div 
         className="modal-container" 
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voice-dialog-title"
+        tabIndex={-1}
         style={{ maxWidth: '680px' }} 
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="modal-header">
           <div>
-            <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Select Neural Voice</h3>
-            <p style={{ fontSize: '13px', color: 'var(--black-60)', marginTop: '2px' }}>
+            <h3 id="voice-dialog-title" style={{ fontSize: '18px', fontWeight: 700 }}>Select Neural Voice</h3>
+            <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginTop: '2px' }}>
               Studio-grade AI acoustic models with natural pacing and emotion
             </p>
           </div>
           <button 
             onClick={() => { stopVoiceSample(); onClose(); }} 
+            aria-label="Close voice selection"
             className="btn-ghost" 
             style={{ padding: '6px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px' }}
           >
@@ -96,15 +98,16 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
         </div>
 
         {/* Filters & Search */}
-        <div style={{ padding: '16px 24px', borderBottom: 'var(--border-light)', display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div className="voice-modal-filters" style={{ padding: '16px 24px', borderBottom: 'var(--border-light)', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1 }}>
             <input
               type="text"
               className="input"
               placeholder="Search voices by name or style..."
+              aria-label="Search voices"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ fontSize: '13px', padding: '8px 12px' }}
+              style={{ fontSize: 'var(--text-input)', padding: '8px 12px' }}
             />
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -141,7 +144,8 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
 
         {/* Voice List */}
         <div style={{ padding: '20px 24px', maxHeight: '460px', overflowY: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+          {filteredVoices.length === 0 && <p role="status" style={{ textAlign: 'center', padding: '24px 0', color: 'var(--black-60)' }}>No voices match your search. Try another name or language.</p>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: '14px' }}>
             {filteredVoices.map(voice => {
               const isSelected = voice.id === selectedVoiceId;
               const isPlaying = previewingVoiceId === voice.id;
@@ -149,6 +153,16 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
               return (
                 <div
                   key={voice.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Select ${voice.name}`}
+                  aria-pressed={isSelected}
+                  onKeyDown={(event) => {
+                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault();
+                      handleSelect(voice);
+                    }
+                  }}
                   onClick={() => handleSelect(voice)}
                   style={{
                     border: isSelected ? '2px solid var(--black-100)' : 'var(--border-light)',
@@ -172,7 +186,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
                         <span style={{ fontSize: '16px', fontWeight: 700 }}>{voice.name}</span>
                         {voice.recommended && (
                           <span style={{
-                          fontSize: '10px',
+                          fontSize: 'var(--text-meta)',
                           fontWeight: 700,
                           letterSpacing: '0.04em',
                           textTransform: 'uppercase',
@@ -185,14 +199,14 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px' }}>
+                    <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)', marginTop: '2px' }}>
                       {voice.language} • {voice.style}
                     </div>
                   </div>
 
                   {isSelected && (
                     <span style={{
-                      fontSize: '11px',
+                      fontSize: 'var(--text-meta)',
                       fontWeight: 600,
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
@@ -203,7 +217,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
                   )}
                 </div>
 
-                <p style={{ fontSize: '12px', color: 'var(--black-70)', marginBottom: '12px', lineHeight: 1.4 }}>
+                <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-70)', marginBottom: '12px', lineHeight: 1.4 }}>
                   {voice.tone}
                 </p>
 
@@ -230,7 +244,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
                     className="btn btn-secondary btn-sm"
                     style={{
                       padding: '4px 10px',
-                      fontSize: '12px',
+                      fontSize: 'var(--text-control)',
                       fontWeight: 600,
                     }}
                   >
@@ -242,7 +256,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
                       <span
                         key={idx}
                         style={{
-                          fontSize: '10px',
+                          fontSize: 'var(--text-meta)',
                           color: 'var(--black-60)',
                           border: '1px solid var(--black-12)',
                           padding: '2px 8px',
@@ -273,3 +287,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
     </div>
   );
 };
+
+export const VoiceModal: React.FC<VoiceModalProps> = (props) => (
+  props.isOpen ? <VoiceModalContent key={props.filterLanguageCode || 'all'} {...props} /> : null
+);

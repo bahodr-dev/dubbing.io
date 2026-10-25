@@ -1,9 +1,15 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'crypto';
 import { authenticateToken } from '../middleware/auth.js';
 import * as userRepository from '../repositories/userRepository.js';
 import { generateToken, setAuthCookie, clearAuthCookie } from '../services/auth/sessionService.js';
 import { startOAuth, handleOAuthCallback } from '../services/auth/oauthService.js';
+import { sendPasswordResetEmail } from '../services/auth/emailService.js';
+import * as passwordResetRepository from '../repositories/passwordResetRepository.js';
+import { logEvent } from '../services/logger.js';
+import * as betaInvites from '../repositories/betaInviteRepository.js';
+import { db } from '../db.js';
 
 export const authRouter = Router();
 
@@ -12,10 +18,24 @@ function getAppUrl() {
   return process.env.APP_URL || 'http://localhost:5173';
 }
 
+function validatePassword(password) {
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+    return 'Password must contain 8 to 128 characters.';
+  }
+  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+    return 'Password must include at least one letter and one number.';
+  }
+  return null;
+}
+
+function hashResetToken(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 // 1. SIGN UP (Email + Password)
 authRouter.post('/signup', async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, inviteToken } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
@@ -27,8 +47,12 @@ authRouter.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ error: passwordError });
+
+    const inviteValidation = betaInvites.validateInviteToken(inviteToken, cleanEmail);
+    if (inviteValidation.error) {
+      return res.status(403).json({ error: 'A valid beta invite is required.', code: inviteValidation.error });
     }
 
     // Check duplicate account
@@ -38,7 +62,7 @@ authRouter.post('/signup', async (req, res) => {
     }
 
     // Securely hash password
-    const salt = await bcrypt.genSalt(10);
+    const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password, salt);
 
     const newUser = userRepository.createUser({
@@ -48,6 +72,11 @@ authRouter.post('/signup', async (req, res) => {
       provider: 'email',
     });
 
+    if (inviteValidation.invite && !betaInvites.consumeInvite(inviteValidation.invite.id, newUser.id)) {
+      db.prepare('DELETE FROM users WHERE id = ?').run(newUser.id);
+      return res.status(409).json({ error: 'This beta invite has already been used.', code: betaInvites.INVITE_ERRORS.INVALID });
+    }
+
     const token = generateToken(newUser);
     setAuthCookie(res, token);
 
@@ -56,6 +85,12 @@ authRouter.post('/signup', async (req, res) => {
       message: 'Account created successfully!',
     });
   } catch (err) {
+    if (err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || err?.code === 'SQLITE_CONSTRAINT') {
+      return res.status(409).json({
+        error: 'The account or beta invite has already been used.',
+        code: betaInvites.isInviteRequired() ? betaInvites.INVITE_ERRORS.INVALID : undefined,
+      });
+    }
     console.error('Error in /signup:', err);
     return res.status(500).json({ error: 'Internal server error during registration.' });
   }
@@ -78,9 +113,7 @@ authRouter.post('/signin', async (req, res) => {
     }
 
     if (!user.password_hash) {
-      return res.status(400).json({
-        error: `This account was registered using ${user.provider}. Please sign in with ${user.provider}.`,
-      });
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
@@ -122,7 +155,77 @@ authRouter.post(['/signout', '/logout'], (_req, res) => {
   return res.json({ message: 'Logged out successfully.' });
 });
 
-// 5. OAUTH START (Google, GitHub, Microsoft)
+// 5. REQUEST PASSWORD RESET (always returns the same response to prevent
+// account discovery through email enumeration).
+authRouter.post('/forgot-password', async (req, res) => {
+  const genericResponse = {
+    message: 'If an account exists with this email, password reset instructions have been sent.',
+  };
+
+  try {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
+    const user = userRepository.findByEmail(email);
+    if (!user) return res.json(genericResponse);
+
+    passwordResetRepository.removeExpiredPasswordResetTokens();
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = hashResetToken(rawToken);
+    passwordResetRepository.createPasswordResetToken({
+      userId: user.id,
+      tokenHash,
+      expiresAt: Date.now() + 30 * 60 * 1000,
+    });
+
+    const resetUrl = new URL('/reset-password', getAppUrl());
+    resetUrl.searchParams.set('token', rawToken);
+    try {
+      await sendPasswordResetEmail({ to: user.email, resetUrl: resetUrl.toString() });
+      logEvent('password_reset_requested', { userId: user.id });
+    } catch (deliveryError) {
+      passwordResetRepository.deleteByTokenHash(tokenHash);
+      logEvent('password_reset_delivery_failed', { userId: user.id, error: deliveryError.message });
+    }
+
+    return res.json(genericResponse);
+  } catch (err) {
+    logEvent('password_reset_request_failed', { error: err.message });
+    return res.json(genericResponse);
+  }
+});
+
+// 6. CONSUME PASSWORD RESET TOKEN
+authRouter.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body || {};
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/i.test(token)) {
+      return res.status(400).json({ error: 'This password reset link is invalid or has expired.' });
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ error: passwordError });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const userId = passwordResetRepository.consumePasswordResetToken({
+      tokenHash: hashResetToken(token),
+      passwordHash,
+    });
+    if (!userId) {
+      return res.status(400).json({ error: 'This password reset link is invalid or has expired.' });
+    }
+
+    clearAuthCookie(res);
+    logEvent('password_reset_completed', { userId });
+    return res.json({ message: 'Your password has been updated. Sign in with your new password.' });
+  } catch (err) {
+    logEvent('password_reset_failed', { error: err.message });
+    return res.status(500).json({ error: 'Could not reset the password. Please request a new link.' });
+  }
+});
+
+// 7. OAUTH START (Google, GitHub, Microsoft)
 const handleOAuthRedirect = (req, res) => {
   const { provider } = req.params;
   const rawRedirect = req.query.redirect_url;
@@ -131,12 +234,13 @@ const handleOAuthRedirect = (req, res) => {
     redirectUrl = rawRedirect;
   }
   try {
-    const { authUrl } = startOAuth(provider, { redirectUrl });
+    const inviteToken = typeof req.query.invite === 'string' ? req.query.invite : null;
+    const { authUrl } = startOAuth(provider, { redirectUrl, inviteToken });
     return res.redirect(authUrl);
   } catch (err) {
     console.error(`Error starting ${provider} OAuth:`, err);
     const appUrl = getAppUrl();
-    return res.redirect(`${appUrl}/signup?error=oauth_failed`);
+    return res.redirect(`${appUrl}/signup?error=${encodeURIComponent(err.code || 'oauth_failed')}`);
   }
 };
 
@@ -153,7 +257,7 @@ authRouter.get('/microsoft', (req, res) => {
   return handleOAuthRedirect(req, res);
 });
 
-// 6. OAUTH CALLBACK (Google, GitHub, Microsoft)
+// 8. OAUTH CALLBACK (Google, GitHub, Microsoft)
 const mapErrorCode = (msg) => {
   if (!msg) return 'oauth_failed';
   const lower = String(msg).toLowerCase();
@@ -178,7 +282,7 @@ const handleOAuthCallbackRoute = async (req, res) => {
   <script>
     try {
       if (window.opener) {
-        window.opener.postMessage({ type: 'DUBBING_AUTH_ERROR', error: ${JSON.stringify(errorCode)} }, ${JSON.stringify(appUrl)});
+        window.opener.postMessage({ type: 'DUBLA_AUTH_ERROR', error: ${JSON.stringify(errorCode)} }, ${JSON.stringify(appUrl)});
         setTimeout(() => window.close(), 600);
       } else {
         window.location.replace("${appUrl}/signup?error=${encodeURIComponent(errorCode)}");
@@ -247,7 +351,7 @@ const handleOAuthCallbackRoute = async (req, res) => {
   <p style="font-size: 14px; opacity: 0.85; letter-spacing: -0.01em;">Completing authentication...</p>
   <script>
     const payload = {
-      type: 'DUBBING_AUTH_SUCCESS'
+      type: 'DUBLA_AUTH_SUCCESS'
     };
 
     if (window.opener) {

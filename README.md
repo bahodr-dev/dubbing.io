@@ -1,6 +1,6 @@
-# dubbing.io — AI Video Dubbing & Translation Platform
+# dubla.uz — AI Video Dubbing & Translation Platform
 
-**dubbing.io** is a production-grade AI video dubbing and translation platform built with React, TypeScript, Vite, Express 5, SQLite, and a strict monochrome design system.
+**dubla.uz** is a production-grade AI video dubbing and translation platform built with React, TypeScript, Vite, Express 5, SQLite, and a strict monochrome design system.
 
 The product allows users to upload video content, transcribe spoken dialogue, translate it into over 40 languages (with native support for **Uzbek (O'zbek)**, English, Spanish, German, Japanese, and more), synthesize studio-grade neural AI voices, and export dubbed videos with synchronized subtitles.
 
@@ -39,8 +39,8 @@ The product allows users to upload video content, transcribe spoken dialogue, tr
 ### Installation & Local Run
 ```bash
 # 1. Clone the repository
-git clone https://github.com/bahodr-dev/dubbing.io.git
-cd dubbing.io
+git clone https://github.com/bahodr-dev/dubla.uz.git
+cd dubla.uz
 
 # 2. Install dependencies
 npm install
@@ -57,6 +57,12 @@ npm run dev
 
 The application will be running at `http://localhost:5173/`.
 
+### Production configuration
+
+For deployment at `https://dubla.uz`, start from `.env.production.example`.
+It uses same-origin `/api` routing and includes the OAuth callback URLs that
+must be registered with Google, GitHub, and Microsoft.
+
 ### Run Automated Tests & Quality Verification
 ```bash
 # Run complete test suite (Vitest + Supertest + React Testing Library)
@@ -68,6 +74,66 @@ npm run lint
 # Build production bundle
 npm run build
 ```
+
+### Payment integration
+
+Payme/Click merchant setup, callback URLs and sandbox checks are documented in [docs/PAYMENTS.md](docs/PAYMENTS.md).
+
+### Database Backup
+```bash
+npm run backup:db
+```
+The backup command keeps the newest 14 database snapshots by default. Set `DB_BACKUP_KEEP_COUNT` to change that retention count.
+
+### Database migrations
+
+```bash
+npm run migrate:db
+```
+
+The backend also applies pending migrations automatically during startup. Applied
+versions are stored in `schema_migrations`. Before an existing database is
+changed, a `pre-migration-*.db` snapshot is created in `database/backups`.
+Migration steps run in one immediate transaction, so a failed step is rolled
+back and server startup stops instead of continuing with a partial schema.
+
+To restore manually, stop the backend, preserve the failed database for
+inspection, copy the required pre-migration snapshot to
+`database/dubbing.db`, and then start the backend again.
+
+### Background dubbing worker
+
+Dubbing and transcription jobs use SQLite-backed worker leases and heartbeat renewal. When the backend restarts, queued or interrupted jobs are recovered automatically after the old lease expires. Temporary, unregistered pipeline artifacts are cleaned after 24 hours by default.
+
+Before a job starts, its server-detected duration is reserved from the user's minute balance. Successful jobs consume the reservation, failed jobs refund it, and retry/restart handling is idempotent.
+
+### Closed beta operations
+
+Set `BETA_INVITE_REQUIRED=true` and create one-time, email-bound invitations with:
+
+```bash
+npm run beta -- invite --email user@example.com
+npm run beta -- credit --email user@example.com --minutes 30
+npm run beta -- status
+npm run beta -- storage
+npm run beta -- cleanup-orphans --dry-run
+```
+
+Invite tokens contain 256 bits of randomness; only their SHA-256 hashes are stored. New email and OAuth accounts must use the invitation email, while existing accounts can continue signing in. Production VPS templates and the restore checklist are in [`deploy/`](deploy/README.md).
+
+Before every deployment, run the complete local production rehearsal:
+
+```bash
+npm run readiness
+```
+
+It runs lint, all tests, the production build, migrations, FFmpeg/FFprobe and configuration preflight, the health endpoint, and a disposable database backup/restore integrity check. On the VPS, run `npm run preflight` with the real environment before starting systemd.
+
+Backend and frontend exceptions are sent to Sentry when `SENTRY_DSN` and `VITE_SENTRY_DSN` are configured. Request bodies, cookies, query strings, authorization headers, transcripts, media URLs, and storage paths are excluded from events.
+
+### Password reset email
+
+Set `RESEND_API_KEY` and `EMAIL_FROM` to deliver password reset messages in production. During local development without an email key, the one-time reset link is printed in the backend log.
 
 ---
 
@@ -121,7 +187,7 @@ MICROSOFT_REDIRECT_URI=http://localhost:5000/api/auth/microsoft/callback
 #### 🐙 GitHub OAuth Setup
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers) > **OAuth Apps**.
 2. Click **New OAuth App**.
-3. Application name: `dubbing.io`
+3. Application name: `dubla.uz`
 4. Homepage URL: `http://localhost:5173`
 5. **Authorization callback URL**:
    - `http://localhost:5000/api/auth/github/callback` (Development)
@@ -162,7 +228,12 @@ MICROSOFT_REDIRECT_URI=http://localhost:5000/api/auth/microsoft/callback
 | `/api/voices` | GET | Public | Fetch available studio and cloned voices |
 | `/api/dubbing/process` | POST | Protected | Start asynchronous AI dubbing pipeline job |
 | `/api/dubbing/jobs/:jobId` | GET | Protected | Poll real-time progress for active dubbing job |
+| `/api/dubbing/projects/:projectId/jobs/latest` | GET | Protected | Restore the latest project job after a page refresh |
+| `/api/dubbing/jobs/:jobId/retry` | POST | Protected | Retry a failed dubbing job within its attempt limit |
+| `/api/dubbing/usage` | GET | Protected | Read the current minute balance and usage history |
 | `/api/dubbing/transcribe` | POST | Protected | Transcribe audio via Whisper API / Acoustic segmenter |
+| `/api/dubbing/transcribe/jobs/:jobId` | GET | Protected | Poll persistent transcription progress |
+| `/api/dubbing/transcribe/jobs/:jobId/retry` | POST | Protected | Retry a failed transcription job |
 | `/api/dubbing/translate` | POST | Protected | Translate dialogue via GPT / DeepL adapter |
 | `/api/dubbing/synthesize` | POST | Protected | Synthesize neural speech via ElevenLabs / OpenAI TTS |
 | `/api/dubbing/export/:id/:format` | GET | Protected | Export SRT / VTT / JSON subtitles (`user_id = ?`) |

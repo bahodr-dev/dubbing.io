@@ -43,8 +43,10 @@ export function normalizeTranscript(rawSegments = [], {
     start = parseFloat(Number(start).toFixed(2));
     end = parseFloat(Number(end).toFixed(2));
 
-    const id = raw.id || `seg-${randomUUID().slice(0, 8)}`;
-    const speaker = raw.speaker || `Speaker ${(i % 2) + 1}`;
+    // Provider segment IDs are only unique within one response; database IDs
+    // must remain unique across separate transcription jobs.
+    const id = `seg-${randomUUID()}`;
+    const speaker = typeof raw.speaker === 'string' ? raw.speaker.trim() : '';
     const confidence = typeof raw.confidence === 'number' ? parseFloat(Number(raw.confidence).toFixed(3)) : 0.96;
 
     validSegments.push({
@@ -57,7 +59,8 @@ export function normalizeTranscript(rawSegments = [], {
       endTime: end,
       originalText: cleanText,
       translatedText: typeof raw.translatedText === 'string' ? raw.translatedText : cleanText,
-      speaker,
+      ...(speaker ? { speaker } : {}),
+      ...(speaker && raw.speakerSource === 'diarization' ? { speakerSource: 'diarization' } : {}),
       confidence,
     });
   }

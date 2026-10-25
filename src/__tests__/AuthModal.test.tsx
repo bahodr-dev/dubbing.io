@@ -20,7 +20,7 @@ describe('AuthModal Component', () => {
       />
     );
 
-    expect(screen.queryByText('Sign in to dubbing.io')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sign in to dubla.uz')).not.toBeInTheDocument();
   });
 
   it('renders sign in form when isOpen is true and submits successfully via cookie', async () => {
@@ -30,7 +30,7 @@ describe('AuthModal Component', () => {
     vi.spyOn(api.auth, 'signin').mockResolvedValue({
       user: {
         id: 'usr_123',
-        email: 'user@dubbing.io',
+        email: 'user@dubla.uz',
         name: 'User',
         provider: 'email',
         avatarUrl: '',
@@ -46,19 +46,19 @@ describe('AuthModal Component', () => {
       />
     );
 
-    expect(screen.getByText('Sign in to dubbing.io')).toBeInTheDocument();
+    expect(screen.getByText('Sign in to dubla.uz')).toBeInTheDocument();
 
     const emailInput = screen.getByPlaceholderText('name@company.com');
     const passwordInput = screen.getByPlaceholderText('••••••••');
 
-    fireEvent.change(emailInput, { target: { value: 'user@dubbing.io' } });
+    fireEvent.change(emailInput, { target: { value: 'user@dubla.uz' } });
     fireEvent.change(passwordInput, { target: { value: 'Secret123!' } });
 
     const submitBtn = screen.getByRole('button', { name: /^continue →/i });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(handleSuccess).toHaveBeenCalledWith('user@dubbing.io');
+      expect(handleSuccess).toHaveBeenCalledWith('user@dubla.uz');
       expect(handleClose).toHaveBeenCalled();
     });
   });
@@ -70,7 +70,7 @@ describe('AuthModal Component', () => {
     vi.spyOn(api.auth, 'me').mockResolvedValue({
       user: {
         id: 'usr_google_456',
-        email: 'google_user@dubbing.io',
+        email: 'google_user@dubla.uz',
         name: 'Google User',
         provider: 'google',
         avatarUrl: '',
@@ -89,14 +89,14 @@ describe('AuthModal Component', () => {
     // Dispatch secure postMessage from valid origin with NO token payload
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'DUBBING_AUTH_SUCCESS' },
+        data: { type: 'DUBLA_AUTH_SUCCESS' },
         origin: window.location.origin,
       })
     );
 
     await waitFor(() => {
       expect(api.auth.me).toHaveBeenCalled();
-      expect(handleSuccess).toHaveBeenCalledWith('google_user@dubbing.io');
+      expect(handleSuccess).toHaveBeenCalledWith('google_user@dubla.uz');
       expect(handleClose).toHaveBeenCalled();
     });
   });
@@ -118,7 +118,7 @@ describe('AuthModal Component', () => {
     // Dispatch message from malicious origin
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'DUBBING_AUTH_SUCCESS' },
+        data: { type: 'DUBLA_AUTH_SUCCESS' },
         origin: 'https://attacker.evil.com',
       })
     );

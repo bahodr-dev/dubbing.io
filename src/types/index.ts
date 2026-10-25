@@ -6,7 +6,9 @@ export interface TranscriptSegment {
   endTime: number;   // in seconds
   originalText: string;
   translatedText: string;
+  translationEdited?: boolean;
   speaker?: string;
+  speakerSource?: 'diarization';
   confidence?: number;
 }
 
@@ -41,10 +43,15 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   videoUrl: string;
+  sourceVideoUrl?: string;
+  dubbedVideoUrl?: string;
+  dubbedAudioUrl?: string;
   thumbnailUrl: string;
   voiceId: string;
   speakerVoices?: Record<string, string>;
   mediaId?: string;
+  outputMediaId?: string;
+  outputAudioMediaId?: string;
   audioUrl?: string;
   transcript: TranscriptSegment[];
   processingProgress?: number;
@@ -53,7 +60,7 @@ export interface Project {
   fileSize?: string;
 }
 
-export type JobStatus = 'pending' | 'transcribing' | 'translating' | 'synthesizing' | 'completed' | 'failed';
+export type JobStatus = 'pending' | 'queued' | 'transcribing' | 'translating' | 'synthesizing' | 'rendering' | 'completed' | 'failed';
 
 export interface ProcessingStep {
   id: string;
@@ -62,7 +69,7 @@ export interface ProcessingStep {
   targetPercent: number;
 }
 
-export type ActiveTab = 'dashboard' | 'studio' | 'pricing' | 'signup';
+export type ActiveTab = 'home' | 'dashboard' | 'studio' | 'pricing' | 'signup';
 
 export interface PaymentPlan {
   id: string;
@@ -98,3 +105,4 @@ export interface UserSubscription {
   subscriptionExpiresAt?: string | null;
 }
 
+export type ProjectLoadState = 'loading' | 'success' | 'error';

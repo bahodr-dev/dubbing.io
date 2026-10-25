@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, ShieldCheck, Sparkles, ExternalLink, Loader2, Zap } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedPlanId?: string;
   onSuccess?: () => void;
+  initialOrderId?: string | null;
 }
 
 interface PlanDetails {
@@ -93,48 +95,117 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onClose,
   selectedPlanId = 'creator',
   onSuccess,
+  initialOrderId,
 }) => {
   const { showSuccess, showError } = useToast();
 
+  const [prevSelectedPlanId, setPrevSelectedPlanId] = useState(selectedPlanId);
   const [planId, setPlanId] = useState<string>(selectedPlanId || 'creator');
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
-  const [provider, setProvider] = useState<'payme' | 'click' | 'uzum'>('payme');
+  const [provider, setProvider] = useState<'payme' | 'click'>('payme');
+  const [availableProviders, setAvailableProviders] = useState<string[]>([]);
+  const [providerLoadError, setProviderLoadError] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
-  const [activeOrder, setActiveOrder] = useState<any | null>(null);
+  const [activeOrder, setActiveOrder] = useState<{ id: string; status: string } | null>(
+    initialOrderId ? { id: initialOrderId, status: 'pending' } : null
+  );
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const canClose = !isLoading && !isSimulating;
+
+  if (selectedPlanId && selectedPlanId !== prevSelectedPlanId) {
+    setPrevSelectedPlanId(selectedPlanId);
+    setPlanId(selectedPlanId);
+  }
+
+  useDialogFocus({
+    isOpen,
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onClose,
+    canClose,
+  });
 
   useEffect(() => {
-    if (selectedPlanId) {
-      setPlanId(selectedPlanId);
-    }
-  }, [selectedPlanId]);
+    if (!isOpen) return;
+    let cancelled = false;
+    api.payments.getPlans().then(({ supportedProviders }) => {
+      if (cancelled) return;
+      const enabled = supportedProviders.filter((item) => item.enabled).map((item) => item.id);
+      setAvailableProviders(enabled);
+      setProvider((current) => enabled.includes(current) ? current : (enabled[0] || 'payme'));
+    }).catch(() => { if (!cancelled) setProviderLoadError(true); });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !activeOrder?.id) return;
+    let cancelled = false;
+    let checking = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = async () => {
+      if (cancelled || checking) return;
+      checking = true;
+      let terminal = false;
+      try {
+        const { order } = await api.payments.getOrder(activeOrder.id);
+        if (cancelled) return;
+        terminal = order.status !== 'pending';
+        setActiveOrder({ id: order.id, status: order.status });
+        if (order.status === 'completed') {
+          setPaymentStatus('Payment confirmed. Your balance has been updated.');
+          showSuccess('Payment confirmed. Your minutes are ready.');
+          onSuccess?.();
+          onClose();
+        } else if (terminal) {
+          setPaymentStatus('This payment was cancelled. You can start a new payment.');
+        } else {
+          setPaymentStatus('Waiting for payment confirmation…');
+        }
+      } catch {
+        if (!cancelled) setPaymentStatus('Unable to check payment yet. Retrying automatically…');
+      } finally {
+        checking = false;
+        if (!cancelled && !terminal) timer = setTimeout(check, 5000);
+      }
+    };
+    check();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isOpen, activeOrder?.id, onSuccess, onClose, showSuccess]);
 
   if (!isOpen) return null;
 
   const plan = DEFAULT_PLANS[planId] || DEFAULT_PLANS.creator;
   const isYearly = billingCycle === 'yearly' && plan.tier !== 'addon';
+  const simulationEnabled = import.meta.env.DEV;
 
   const displayPriceUSD = isYearly ? plan.priceYearlyUSD : plan.priceMonthlyUSD;
   const displayPriceUZS = isYearly ? plan.priceYearlyUZS : plan.priceMonthlyUZS;
   const totalAmountUZS = isYearly ? plan.priceYearlyUZS * 12 : plan.priceMonthlyUZS;
 
   const handleCreateOrder = async () => {
+    const checkoutWindow = window.open('about:blank', '_blank');
+    if (checkoutWindow) checkoutWindow.opener = null;
     setIsLoading(true);
     try {
       const res = await api.payments.createCheckout({
         planId: plan.id,
         billingCycle,
         provider,
-        returnUrl: `${window.location.origin}/dashboard?payment=success`,
+        returnUrl: `${window.location.origin}/dashboard/pricing`,
       });
 
       setActiveOrder(res.order);
 
       // Open provider checkout in new tab
       const targetUrl = provider === 'click' ? res.paymentUrls.click : res.paymentUrls.payme;
-      window.open(targetUrl, '_blank');
+      if (checkoutWindow) checkoutWindow.location.href = targetUrl;
+      else window.location.assign(targetUrl);
       showSuccess(`Redirecting to ${provider.toUpperCase()} checkout gateway...`);
     } catch (err: unknown) {
+      checkoutWindow?.close();
       const errorObj = err as Error;
       showError(errorObj.message || 'Failed to initiate payment.');
     } finally {
@@ -158,6 +229,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       // 2. Simulate success
+      if (!currentOrderId) throw new Error('Could not create a test order.');
       const res = await api.payments.simulateSuccess(currentOrderId);
       showSuccess(res.message || '🎉 Subscription successfully activated!');
       onSuccess?.();
@@ -172,6 +244,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div
+      data-dialog-backdrop
       style={{
         position: 'fixed',
         inset: 0,
@@ -184,9 +257,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         padding: '20px',
         animation: 'fadeIn 160ms ease-out',
       }}
-      onClick={onClose}
+      onClick={() => {
+        if (canClose) onClose();
+      }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="checkout-dialog-title"
+        tabIndex={-1}
         style={{
           width: '100%',
           maxWidth: '560px',
@@ -213,7 +293,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <div>
             <span
               style={{
-                fontSize: '11px',
+                fontSize: 'var(--text-meta)',
                 fontWeight: 700,
                 textTransform: 'uppercase',
                 letterSpacing: '0.08em',
@@ -222,12 +302,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             >
               SECURE CHECKOUT
             </span>
-            <h2 style={{ fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', marginTop: '2px' }}>
+            <h2 id="checkout-dialog-title" style={{ fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', marginTop: '2px' }}>
               Upgrade to {plan.name}
             </h2>
           </div>
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
+            disabled={!canClose}
+            aria-label="Close checkout"
             style={{
               background: 'none',
               border: 'none',
@@ -263,7 +347,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     padding: '8px',
                     border: 'none',
                     borderRadius: '7px',
-                    fontSize: '13px',
+                    fontSize: 'var(--text-control)',
                     fontWeight: 600,
                     background: billingCycle === 'monthly' ? '#000000' : 'transparent',
                     color: billingCycle === 'monthly' ? '#FFFFFF' : 'rgba(0, 0, 0, 0.65)',
@@ -281,7 +365,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     padding: '8px',
                     border: 'none',
                     borderRadius: '7px',
-                    fontSize: '13px',
+                    fontSize: 'var(--text-control)',
                     fontWeight: 600,
                     background: billingCycle === 'yearly' ? '#000000' : 'transparent',
                     color: billingCycle === 'yearly' ? '#FFFFFF' : 'rgba(0, 0, 0, 0.65)',
@@ -289,7 +373,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     transition: 'all 120ms ease',
                   }}
                 >
-                  Yearly billing <span style={{ fontSize: '11px', opacity: 0.85 }}>(-20%)</span>
+                  Yearly billing <span style={{ fontSize: 'var(--text-meta)', opacity: 0.85 }}>(-20%)</span>
                 </button>
               </div>
             </div>
@@ -310,13 +394,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <span style={{ fontSize: '32px', fontWeight: 800, letterSpacing: '-0.03em' }}>
                   {displayPriceUZS.toLocaleString('uz-UZ')} UZS
                 </span>
-                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.6)', marginLeft: '6px' }}>
+                <span style={{ fontSize: 'var(--text-control)', color: 'rgba(255, 255, 255, 0.6)', marginLeft: '6px' }}>
                   / {isYearly ? 'month (billed yearly)' : 'month'}
                 </span>
               </div>
               <div
                 style={{
-                  fontSize: '12.5px',
+                  fontSize: 'var(--text-meta)',
                   fontWeight: 600,
                   backgroundColor: 'rgba(255, 255, 255, 0.15)',
                   padding: '4px 10px',
@@ -328,7 +412,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {isYearly && (
-              <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginTop: '4px' }}>
+              <div style={{ fontSize: 'var(--text-meta)', color: 'rgba(255, 255, 255, 0.6)', marginTop: '4px' }}>
                 Annual total: {totalAmountUZS.toLocaleString('uz-UZ')} UZS ({plan.minutes * 12} mins total)
               </div>
             )}
@@ -341,7 +425,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 color: 'rgba(255, 255, 255, 0.9)',
               }}
@@ -356,7 +440,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <label
               style={{
                 display: 'block',
-                fontSize: '12px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 700,
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
@@ -367,10 +451,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               Select Payment Method
             </label>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+            <div role="group" aria-label="Payment method" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
               {/* Payme */}
-              <div
+              <button
+                type="button"
                 onClick={() => setProvider('payme')}
+                disabled={!availableProviders.includes('payme')}
+                title={!availableProviders.includes('payme') ? 'Payme is not available yet' : undefined}
+                aria-pressed={provider === 'payme'}
                 style={{
                   border: provider === 'payme' ? '2px solid #000000' : '1px solid rgba(0, 0, 0, 0.12)',
                   borderRadius: '10px',
@@ -379,19 +467,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   cursor: 'pointer',
                   backgroundColor: provider === 'payme' ? 'rgba(0, 0, 0, 0.03)' : '#FFFFFF',
                   transition: 'all 120ms ease',
+                  fontFamily: 'inherit',
                 }}
               >
                 <div style={{ fontSize: '15px', fontWeight: 800, color: '#00C7B1', letterSpacing: '-0.02em' }}>
                   payme
                 </div>
-                <div style={{ fontSize: '11px', color: 'rgba(0, 0, 0, 0.6)', marginTop: '2px', fontWeight: 600 }}>
+                <div style={{ fontSize: 'var(--text-meta)', color: 'rgba(0, 0, 0, 0.6)', marginTop: '2px', fontWeight: 600 }}>
                   Uzcard / Humo
                 </div>
-              </div>
+              </button>
 
               {/* Click */}
-              <div
+              <button
+                type="button"
                 onClick={() => setProvider('click')}
+                disabled={!availableProviders.includes('click')}
+                title={!availableProviders.includes('click') ? 'Click is not available yet' : undefined}
+                aria-pressed={provider === 'click'}
                 style={{
                   border: provider === 'click' ? '2px solid #000000' : '1px solid rgba(0, 0, 0, 0.12)',
                   borderRadius: '10px',
@@ -400,45 +493,57 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   cursor: 'pointer',
                   backgroundColor: provider === 'click' ? 'rgba(0, 0, 0, 0.03)' : '#FFFFFF',
                   transition: 'all 120ms ease',
+                  fontFamily: 'inherit',
                 }}
               >
                 <div style={{ fontSize: '15px', fontWeight: 800, color: '#0073FF', letterSpacing: '-0.02em' }}>
                   CLICK
                 </div>
-                <div style={{ fontSize: '11px', color: 'rgba(0, 0, 0, 0.6)', marginTop: '2px', fontWeight: 600 }}>
+                <div style={{ fontSize: 'var(--text-meta)', color: 'rgba(0, 0, 0, 0.6)', marginTop: '2px', fontWeight: 600 }}>
                   Click Up / QR
                 </div>
-              </div>
+              </button>
 
               {/* Uzum / Card */}
-              <div
-                onClick={() => setProvider('uzum')}
+              <button
+                type="button"
+                disabled
+                aria-pressed={false}
+                title="Coming soon"
                 style={{
-                  border: provider === 'uzum' ? '2px solid #000000' : '1px solid rgba(0, 0, 0, 0.12)',
+                  border: '1px solid rgba(0, 0, 0, 0.12)',
                   borderRadius: '10px',
                   padding: '12px 10px',
                   textAlign: 'center',
                   cursor: 'pointer',
-                  backgroundColor: provider === 'uzum' ? 'rgba(0, 0, 0, 0.03)' : '#FFFFFF',
+                  backgroundColor: '#FFFFFF',
                   transition: 'all 120ms ease',
+                  fontFamily: 'inherit',
                 }}
               >
                 <div style={{ fontSize: '15px', fontWeight: 800, color: '#7000FF', letterSpacing: '-0.02em' }}>
                   Uzum Pay
                 </div>
-                <div style={{ fontSize: '11px', color: 'rgba(0, 0, 0, 0.6)', marginTop: '2px', fontWeight: 600 }}>
+                <div style={{ fontSize: 'var(--text-meta)', color: 'rgba(0, 0, 0, 0.6)', marginTop: '2px', fontWeight: 600 }}>
                   Visa / Master / Humo
                 </div>
-              </div>
+              </button>
             </div>
           </div>
+
+          {availableProviders.length === 0 && (
+            <p role="status" style={{ fontSize: 'var(--text-body)', marginBottom: '16px', color: 'var(--black-60)' }}>
+              {providerLoadError ? 'Payment methods could not be loaded. Please reopen checkout to retry.' : 'Online payments are currently unavailable.'}
+            </p>
+          )}
+          {paymentStatus && <p role="status" style={{ fontSize: 'var(--text-body)', marginBottom: '16px' }}>{paymentStatus}</p>}
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button
               type="button"
               onClick={handleCreateOrder}
-              disabled={isLoading}
+              disabled={isLoading || isSimulating || !availableProviders.includes(provider)}
               className="btn btn-primary"
               style={{
                 width: '100%',
@@ -465,14 +570,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </button>
 
             {/* Test Mode / Fast Sandbox Simulation button */}
-            <button
+            {simulationEnabled && <button
               type="button"
               onClick={handleSimulatePayment}
-              disabled={isSimulating}
+              disabled={isSimulating || isLoading}
               style={{
                 width: '100%',
                 padding: '10px',
-                fontSize: '12.5px',
+                fontSize: 'var(--text-control)',
                 fontWeight: 600,
                 backgroundColor: 'rgba(0, 0, 0, 0.05)',
                 border: '1px dashed rgba(0, 0, 0, 0.2)',
@@ -499,7 +604,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <span>⚡ Test Instant Activation (Sandbox Demo Mode)</span>
                 </>
               )}
-            </button>
+            </button>}
           </div>
 
           {/* Security Guarantee Footer */}
@@ -510,7 +615,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               gap: '6px',
-              fontSize: '11.5px',
+              fontSize: 'var(--text-meta)',
               color: 'rgba(0, 0, 0, 0.5)',
             }}
           >

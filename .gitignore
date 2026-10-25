@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+.codex-build/
+.codex-finalizer/
 
 # Editor directories and files
 .vscode/*
@@ -27,6 +29,7 @@ dist-ssr
 database/*.db
 database/*.db-wal
 database/*.db-shm
+database/backups/*.db
 
 # Media Uploads
 uploads/*
@@ -36,3 +39,4 @@ uploads/*
 .env
 .env.*
 !.env.example
+!.env.production.example

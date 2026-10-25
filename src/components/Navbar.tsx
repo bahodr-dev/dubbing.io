@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Sparkles } from 'lucide-react';
+import { ChevronDown, CreditCard, LayoutDashboard, Film, LogOut, Moon, Sparkles, Sun } from 'lucide-react';
 import type { ActiveTab } from '../types';
 import type { UserProfile } from '../services/api';
 import { Logo } from './Logo';
@@ -23,6 +23,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
 }) => {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    try {
+      return localStorage.getItem('dubla_uz_theme') === 'dark';
+    } catch {
+      return false;
+    }
+  });
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on click outside or Escape key
@@ -45,8 +52,17 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = isDarkMode ? 'dark' : 'light';
+    try {
+      localStorage.setItem('dubla_uz_theme', isDarkMode ? 'dark' : 'light');
+    } catch {
+      // Theme preference is optional when storage is unavailable.
+    }
+  }, [isDarkMode]);
+
   const handleLogoClick = () => {
-    onNavigate(isAuthenticated ? 'dashboard' : 'signup');
+    onNavigate(isAuthenticated ? 'dashboard' : 'home');
     setIsAccountMenuOpen(false);
   };
 
@@ -54,7 +70,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="nav-header">
       <div className="nav-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
         {/* Brand Logo (Always on the Left) */}
-        <div 
+        <button
+          type="button"
+          className="nav-brand"
+          aria-label="dubla.uz home"
           onClick={handleLogoClick}
           style={{
             cursor: 'pointer',
@@ -71,9 +90,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             letterSpacing: '-0.04em',
             color: 'var(--black-100)',
           }}>
-            dubbing.io
+            dubla.uz
           </span>
-        </div>
+        </button>
 
         {/* Right Action: User Account Dropdown */}
         <div style={{
@@ -82,11 +101,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           gap: '12px',
           position: 'relative',
         }}>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setIsDarkMode((value) => !value)}
+            aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-pressed={isDarkMode}
+            title={isDarkMode ? 'Light mode' : 'Dark mode'}
+          >
+            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           {isAuthenticated ? (
             /* User Account Popover Trigger */
             <div ref={dropdownRef} style={{ position: 'relative' }}>
               <button
                 type="button"
+                aria-expanded={isAccountMenuOpen}
+                aria-controls={isAccountMenuOpen ? 'account-navigation' : undefined}
                 onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
                 style={{
                   display: 'flex',
@@ -114,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   borderRadius: '50%',
                   backgroundColor: 'var(--black-100)',
                   color: 'var(--white-100)',
-                  fontSize: '12px',
+                  fontSize: 'var(--text-meta)',
                   fontWeight: 700,
                   display: 'flex',
                   alignItems: 'center',
@@ -124,8 +155,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {user?.name?.[0] || user?.email?.[0] || 'U'}
                 </div>
 
-                <span style={{
-                  fontSize: '13.5px',
+                <span className="nav-account-name" style={{
+                  fontSize: 'var(--text-control)',
                   fontWeight: 600,
                   color: 'var(--black-100)',
                 }}>
@@ -144,7 +175,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {/* Dropdown Menu Popover */}
               {isAccountMenuOpen && (
-                <div style={{
+                <div id="account-navigation" style={{
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
                   right: 0,
@@ -163,10 +194,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     borderBottom: 'var(--border-light)',
                     marginBottom: '6px',
                   }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--black-100)' }}>
+                    <div style={{ fontSize: 'var(--text-control)', fontWeight: 700, color: 'var(--black-100)' }}>
                       {user?.name || 'User'}
                     </div>
-                    <div style={{ fontSize: '11.5px', color: 'var(--black-60)', marginTop: '1px', wordBreak: 'break-all' }}>
+                    <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)', marginTop: '1px', wordBreak: 'break-all' }}>
                       {user?.email || ''}
                     </div>
                     <div style={{
@@ -179,12 +210,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                       backgroundColor: user?.plan === 'pro' ? '#000000' : 'var(--black-05)',
                       color: user?.plan === 'pro' ? '#FFFFFF' : 'var(--black-80)',
                       border: 'var(--border-subtle)',
-                      fontSize: '10.5px',
+                      fontSize: 'var(--text-meta)',
                       fontWeight: 600,
                     }}>
                       <Sparkles size={10} color={user?.plan === 'pro' ? '#FFFFFF' : undefined} />
                       <span style={{ textTransform: 'uppercase' }}>
-                        {user?.plan || 'Free'} Plan • {user?.minutesBalance ?? 5}m left
+                        {user?.plan || 'Free'} Plan • {Number(user?.minutesBalance ?? 5).toFixed(2)}m left
                       </span>
                     </div>
                   </div>
@@ -207,7 +238,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         borderRadius: 'var(--radius-sm)',
                         backgroundColor: activeTab === 'pricing' ? 'var(--black-05)' : 'transparent',
                         color: 'var(--black-100)',
-                        fontSize: '13px',
+                        fontSize: 'var(--text-control)',
                         fontWeight: activeTab === 'pricing' ? 600 : 500,
                         textAlign: 'left',
                         cursor: 'pointer',
@@ -238,7 +269,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         borderRadius: 'var(--radius-sm)',
                         backgroundColor: activeTab === 'dashboard' ? 'var(--black-05)' : 'transparent',
                         color: 'var(--black-100)',
-                        fontSize: '13px',
+                        fontSize: 'var(--text-control)',
                         fontWeight: activeTab === 'dashboard' ? 600 : 500,
                         textAlign: 'left',
                         cursor: 'pointer',
@@ -269,7 +300,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         borderRadius: 'var(--radius-sm)',
                         backgroundColor: activeTab === 'studio' ? 'var(--black-05)' : 'transparent',
                         color: 'var(--black-100)',
-                        fontSize: '13px',
+                        fontSize: 'var(--text-control)',
                         fontWeight: activeTab === 'studio' ? 600 : 500,
                         textAlign: 'left',
                         cursor: 'pointer',
@@ -307,7 +338,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         borderRadius: 'var(--radius-sm)',
                         backgroundColor: 'transparent',
                         color: 'var(--black-80)',
-                        fontSize: '13px',
+                        fontSize: 'var(--text-control)',
                         fontWeight: 500,
                         textAlign: 'left',
                         cursor: 'pointer',
@@ -334,14 +365,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={onOpenAuth}
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: '13px', fontWeight: 500 }}
+                style={{ fontSize: 'var(--text-control)', fontWeight: 500 }}
               >
                 Sign in
               </button>
               <button
                 onClick={() => onNavigate('signup')}
                 className="btn btn-primary btn-sm btn-arrow-group"
-                style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 600 }}
+                style={{ padding: '7px 16px', fontSize: 'var(--text-control)', fontWeight: 600 }}
               >
                 <span>Create account</span>
                 <span className="arrow-symbol">→</span>

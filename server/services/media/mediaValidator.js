@@ -13,6 +13,22 @@ export const ALLOWED_MIME_TYPES = new Set([
   'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/aac', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'
 ]);
 
+const MIME_BY_EXTENSION = {
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+};
+
+export function safeMimeTypeForExtension(extension) {
+  return MIME_BY_EXTENSION[extension.toLowerCase()] || 'application/octet-stream';
+}
+
 /**
  * Inspects buffer header bytes to check if the file matches known media signatures (magic bytes)
  */
@@ -126,8 +142,7 @@ export function validateMediaFile({
 
     if (bytesRead >= 4) {
       const magicResult = checkMagicBytes(headerBuffer.subarray(0, bytesRead));
-      // If we couldn't match a strict magic signature, but extension is standard and size > 0, log caution
-      // but if it has obvious text/HTML/shell script signatures, reject it
+      // Reject scripts and files without a recognised media container signature.
       const headerText = headerBuffer.subarray(0, bytesRead).toString('utf8');
       if (
         headerText.startsWith('<!DOCTYPE') ||
@@ -139,6 +154,13 @@ export function validateMediaFile({
         return {
           isValid: false,
           error: 'File content does not match a valid audio or video format (executable/script detected).',
+        };
+      }
+
+      if (!magicResult.detected) {
+        return {
+          isValid: false,
+          error: 'File content does not match a recognised audio or video format.',
         };
       }
 
@@ -156,11 +178,5 @@ export function validateMediaFile({
     return { isValid: false, error: `Failed to inspect file binary header: ${err.message}` };
   }
 
-  const mediaType = ext.match(/\.(mp3|wav|aac|ogg|m4a)$/i) ? 'audio' : 'video';
-  return {
-    isValid: true,
-    sizeBytes: stats.size,
-    extension: ext,
-    mediaType,
-  };
+  return { isValid: false, error: 'Media file header is too small to validate.' };
 }

@@ -5,6 +5,7 @@ import { createOAuthState, validateAndConsumeState } from './oauthStateService.j
 import * as userRepository from '../../repositories/userRepository.js';
 import * as oauthAccountRepository from '../../repositories/oauthAccountRepository.js';
 import { generateToken } from './sessionService.js';
+import * as betaInvites from '../../repositories/betaInviteRepository.js';
 
 const PROVIDERS = {
   google: googleProvider,
@@ -24,7 +25,7 @@ export function getProvider(name) {
 /**
  * Initiates real OAuth flow for the given provider
  */
-export function startOAuth(providerName, { redirectUrl = '/dashboard' } = {}) {
+export function startOAuth(providerName, { redirectUrl = '/dashboard', inviteToken = null } = {}) {
   const provider = getProvider(providerName);
 
   if (!provider.isConfigured()) {
@@ -32,10 +33,31 @@ export function startOAuth(providerName, { redirectUrl = '/dashboard' } = {}) {
   }
 
   const usePkce = providerName === 'google' || providerName === 'microsoft';
+  let inviteId = null;
+  if (betaInvites.isInviteRequired()) {
+    if (typeof inviteToken !== 'string' || inviteToken.length < 32) {
+      const error = new Error('A beta invite is required.');
+      error.code = betaInvites.INVITE_ERRORS.REQUIRED;
+      throw error;
+    }
+    const inviteResult = betaInvites.findActiveInviteByToken(inviteToken);
+    if (inviteResult.error === betaInvites.INVITE_ERRORS.INVALID) {
+      const error = new Error('The beta invite is invalid or already used.');
+      error.code = betaInvites.INVITE_ERRORS.INVALID;
+      throw error;
+    }
+    if (inviteResult.error === betaInvites.INVITE_ERRORS.EXPIRED) {
+      const error = new Error('The beta invite has expired.');
+      error.code = betaInvites.INVITE_ERRORS.EXPIRED;
+      throw error;
+    }
+    inviteId = inviteResult.invite.id;
+  }
   const { state, codeChallenge } = createOAuthState({
     provider: providerName,
     redirectUrl,
     usePkce,
+    inviteId,
   });
 
   const authUrl = provider.getAuthorizationUrl(state, codeChallenge);
@@ -95,6 +117,24 @@ export async function handleOAuthCallback(providerName, { code, state }) {
           providerEmail: profile.email,
         });
       } else {
+        if (betaInvites.isInviteRequired()) {
+          const invite = betaInvites.findInviteById(stateData.invite_id);
+          if (!invite || invite.used_at) {
+            const error = new Error('The beta invite is invalid or already used.');
+            error.code = betaInvites.INVITE_ERRORS.INVALID;
+            throw error;
+          }
+          if (Date.now() > Number(invite.expires_at)) {
+            const error = new Error('The beta invite has expired.');
+            error.code = betaInvites.INVITE_ERRORS.EXPIRED;
+            throw error;
+          }
+          if (!profile.emailVerified || invite.email !== String(profile.email || '').toLowerCase()) {
+            const error = new Error('The OAuth email does not match the beta invite.');
+            error.code = betaInvites.INVITE_ERRORS.EMAIL_MISMATCH;
+            throw error;
+          }
+        }
         // Create new user and link
         user = userRepository.createUser({
           email: profile.email,
@@ -108,9 +148,17 @@ export async function handleOAuthCallback(providerName, { code, state }) {
           providerAccountId: profile.providerAccountId,
           providerEmail: profile.email,
         });
+        if (betaInvites.isInviteRequired() && !betaInvites.consumeInvite(stateData.invite_id, user.id)) {
+          throw new Error('The beta invite was already redeemed.');
+        }
       }
     } else {
       // Unverified email: NEVER automatically link to an existing user (prevent account takeover)
+      if (betaInvites.isInviteRequired()) {
+        const error = new Error('A verified OAuth email matching the beta invite is required.');
+        error.code = betaInvites.INVITE_ERRORS.EMAIL_MISMATCH;
+        throw error;
+      }
       let targetEmail = profile.email;
       if (targetEmail) {
         const existing = userRepository.findByEmail(targetEmail);

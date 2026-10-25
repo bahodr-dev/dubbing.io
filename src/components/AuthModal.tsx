@@ -27,7 +27,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (event.origin !== window.location.origin) return;
 
       if (event.data && typeof event.data === 'object') {
-        if (event.data.type === 'DUBBING_AUTH_SUCCESS') {
+        if (event.data.type === 'DUBLA_AUTH_SUCCESS') {
           try {
             const meRes = await api.auth.me();
             onSuccess(meRes.user.email);
@@ -36,7 +36,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             const errorObj = err as Error;
             setError(errorObj.message || 'Authentication failed.');
           }
-        } else if (event.data.type === 'DUBBING_AUTH_ERROR') {
+        } else if (event.data.type === 'DUBLA_AUTH_ERROR') {
           setError('Authentication failed. Please try again.');
         }
       }
@@ -63,7 +63,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       if (mode === 'signup') {
-        const res = await api.auth.signup(email, password);
+        const inviteToken = new URLSearchParams(window.location.search).get('invite');
+        const res = await api.auth.signup(email, password, undefined, inviteToken);
         onSuccess(res.user.email);
         onClose();
       } else {
@@ -86,14 +87,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
     const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
 
+    const inviteToken = new URLSearchParams(window.location.search).get('invite');
+    const oauthUrl = `/api/auth/google${inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : ''}`;
     const popup = window.open(
-      '/api/auth/google',
-      'dubbing_oauth_google',
+      oauthUrl,
+      'dubla_oauth_google',
       `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
     );
 
     if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-      window.location.assign('/api/auth/google');
+      window.location.assign(oauthUrl);
     }
   };
 
@@ -107,9 +110,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="modal-header">
           <div>
             <h3 style={{ fontSize: '18px', fontWeight: 700 }}>
-              {mode === 'signin' ? 'Sign in to dubbing.io' : 'Create your account'}
+              {mode === 'signin' ? 'Sign in to dubla.uz' : 'Create your account'}
             </h3>
-            <p style={{ fontSize: '13px', color: 'var(--black-60)', marginTop: '2px' }}>
+            <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginTop: '2px' }}>
               {mode === 'signin' ? 'Welcome back to your studio' : 'Start dubbing your videos today'}
             </p>
           </div>
@@ -142,7 +145,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             gap: '12px',
             margin: '20px 0',
             color: 'var(--black-40)',
-            fontSize: '12px',
+            fontSize: 'var(--text-meta)',
             textTransform: 'uppercase',
             letterSpacing: '0.08em',
           }}>
@@ -157,7 +160,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 padding: '10px 14px',
                 border: '1px solid var(--black-100)',
                 backgroundColor: 'var(--black-05)',
-                fontSize: '13px',
+                fontSize: 'var(--text-control)',
                 marginBottom: '16px',
                 borderRadius: 'var(--radius-xs)',
               }}>
@@ -201,7 +204,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div style={{
             marginTop: '24px',
             textAlign: 'center',
-            fontSize: '13px',
+            fontSize: 'var(--text-control)',
             color: 'var(--black-60)',
           }}>
             {mode === 'signin' ? (

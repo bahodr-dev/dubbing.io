@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { normalizeTranscript } from './transcriptNormalizer.js';
+import { splitAudioIntoChunks } from './transcriptionChunker.js';
 
 /**
  * Base abstract interface for Transcription Providers
@@ -14,7 +15,7 @@ export class TranscriptionProvider {
    * @param {AbortSignal} [input.signal] - Optional abort signal
    * @returns {Promise<{ language: string, duration: number, segments: Array<Object>, segmentCount: number }>}
    */
-  async transcribe(input) {
+  async transcribe(_input) {
     throw new Error('transcribe() must be implemented by transcription provider.');
   }
 }
@@ -25,7 +26,7 @@ export class TranscriptionProvider {
 export class OpenAITranscriptionProvider extends TranscriptionProvider {
   constructor({
     apiKey = process.env.OPENAI_API_KEY,
-    model = process.env.TRANSCRIPTION_MODEL || 'whisper-1',
+    model = process.env.TRANSCRIPTION_MODEL || 'gpt-4o-transcribe-diarize',
     baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     fetchClient = globalThis.fetch,
   } = {}) {
@@ -36,27 +37,27 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
     this.fetch = fetchClient;
   }
 
-  async transcribe({ audioFilePath, language = 'en', prompt, signal, duration = 0 } = {}) {
-    if (!this.apiKey) {
-      throw new Error('OpenAI API key is missing. Set OPENAI_API_KEY environment variable.');
-    }
-
-    if (!audioFilePath || !fs.existsSync(audioFilePath)) {
-      throw new Error('Audio file does not exist on disk.');
-    }
-
+  async _transcribeSingleChunk({ audioFilePath, language = 'en', prompt, signal, duration = 0, offsetSeconds = 0, speakerLabels = new Map() } = {}) {
     const fileBuffer = fs.readFileSync(audioFilePath);
-    const fileBlob = new Blob([fileBuffer], { type: 'audio/wav' });
+    const maxBytes = Number.parseInt(process.env.TRANSCRIPTION_MAX_BYTES || '25165824', 10);
+    if (fileBuffer.length > maxBytes) {
+      const error = new Error(`Prepared transcription audio chunk exceeds the ${Math.floor(maxBytes / 1024 / 1024)} MB provider limit.`);
+      error.code = 'TRANSCRIPTION_FILE_TOO_LARGE';
+      throw error;
+    }
+    const fileBlob = new Blob([fileBuffer], { type: path.extname(audioFilePath).toLowerCase() === '.mp3' ? 'audio/mpeg' : 'audio/wav' });
     const filename = path.basename(audioFilePath);
 
     const formData = new FormData();
     formData.append('file', fileBlob, filename);
     formData.append('model', this.model);
-    formData.append('response_format', 'verbose_json');
+    const diarize = this.model === 'gpt-4o-transcribe-diarize';
+    formData.append('response_format', diarize ? 'diarized_json' : this.model === 'whisper-1' ? 'verbose_json' : 'json');
+    if (diarize) formData.append('chunking_strategy', 'auto');
     if (language) {
       formData.append('language', language);
     }
-    if (prompt) {
+    if (prompt && !diarize) {
       formData.append('prompt', prompt);
     }
 
@@ -83,7 +84,7 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
       let errorBody = {};
       try {
         errorBody = await response.json();
-      } catch (_) {}
+      } catch {}
 
       const msg = errorBody.error?.message || `HTTP ${response.status} ${response.statusText}`;
 
@@ -101,23 +102,117 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
     }
 
     const data = await response.json();
-    const rawSegments = Array.isArray(data.segments) ? data.segments : [];
-    const detectedLanguage = data.language || language || 'en';
-    const finalDuration = typeof data.duration === 'number' ? data.duration : (typeof duration === 'number' ? duration : 0);
-
-    // If verbose_json did not return segments array but returned whole text
-    if (rawSegments.length === 0 && data.text && data.text.trim()) {
-      return normalizeTranscript([
-        {
-          start: 0,
-          end: finalDuration || 5.0,
-          text: data.text.trim(),
+    let rawSegments = Array.isArray(data.segments) ? data.segments : [];
+    if (diarize) {
+      rawSegments = rawSegments.map((segment) => {
+        const providerSpeaker = typeof segment?.speaker === 'string' ? segment.speaker.trim() : '';
+        if (!providerSpeaker) return segment;
+        if (!speakerLabels.has(providerSpeaker)) {
+          speakerLabels.set(providerSpeaker, `Speaker ${speakerLabels.size + 1}`);
         }
-      ], { language: detectedLanguage, fallbackDuration: finalDuration });
+        return { ...segment, speaker: speakerLabels.get(providerSpeaker), speakerSource: 'diarization' };
+      });
     }
 
-    return normalizeTranscript(rawSegments, {
+    // Apply offset to segment timestamps
+    if (offsetSeconds > 0) {
+      rawSegments = rawSegments.map((segment) => ({
+        ...segment,
+        start: (Number(segment.start) || 0) + offsetSeconds,
+        end: (Number(segment.end) || 0) + offsetSeconds,
+      }));
+    }
+
+    const detectedLanguage = data.language || language || 'en';
+    const chunkDuration = typeof data.duration === 'number' ? data.duration : (typeof duration === 'number' ? duration : 0);
+
+    if (rawSegments.length === 0 && data.text && data.text.trim()) {
+      rawSegments = [{
+        start: offsetSeconds,
+        end: offsetSeconds + (chunkDuration || 5.0),
+        text: data.text.trim(),
+      }];
+    }
+
+    return {
+      rawSegments,
       language: detectedLanguage,
+      duration: chunkDuration,
+    };
+  }
+
+  async transcribe({ audioFilePath, language = 'en', prompt, signal, duration = 0 } = {}) {
+    if (!this.apiKey) {
+      throw new Error('OpenAI API key is missing. Set OPENAI_API_KEY environment variable.');
+    }
+
+    if (!audioFilePath || !fs.existsSync(audioFilePath)) {
+      throw new Error('Audio file does not exist on disk.');
+    }
+
+    const fileSize = fs.statSync(audioFilePath).size;
+    const maxBytes = Number.parseInt(process.env.TRANSCRIPTION_MAX_BYTES || '25165824', 10);
+    const isLongDuration = typeof duration === 'number' && duration > 600;
+
+    // If file exceeds size limit or is very long, use audio chunking pipeline
+    if (fileSize > maxBytes || isLongDuration) {
+      const { chunks, cleanup } = await splitAudioIntoChunks({
+        audioFilePath,
+        totalDuration: duration,
+        chunkDurationSeconds: 600,
+      });
+
+      try {
+        const allSegments = [];
+        const speakerLabels = new Map();
+        let detectedLanguage = language;
+        let totalChunkDuration = 0;
+
+        for (const chunk of chunks) {
+          const chunkResult = await this._transcribeSingleChunk({
+            audioFilePath: chunk.filePath,
+            language,
+            prompt,
+            signal,
+            duration: chunk.duration,
+            offsetSeconds: chunk.offsetSeconds,
+            speakerLabels,
+          });
+
+          allSegments.push(...chunkResult.rawSegments);
+          detectedLanguage = chunkResult.language || detectedLanguage;
+          totalChunkDuration += chunkResult.duration;
+        }
+
+        const finalDuration = totalChunkDuration > 0 ? totalChunkDuration : duration;
+        return normalizeTranscript(allSegments, {
+          language: detectedLanguage,
+          fallbackDuration: finalDuration,
+        });
+      } finally {
+        cleanup();
+      }
+    }
+
+    // Single chunk standard path
+    const speakerLabels = new Map();
+    const result = await this._transcribeSingleChunk({
+      audioFilePath,
+      language,
+      prompt,
+      signal,
+      duration,
+      offsetSeconds: 0,
+      speakerLabels,
+    });
+
+    if (this.model === 'gpt-4o-transcribe-diarize' && speakerLabels.size === 0) {
+      throw new Error('The transcription provider did not identify any speakers. Retry with clearer audio.');
+    }
+
+    const finalDuration = result.duration > 0 ? result.duration : (typeof duration === 'number' ? duration : 0);
+    return normalizeTranscript(result.rawSegments, {
+      language: result.language,
       fallbackDuration: finalDuration,
     });
   }
@@ -133,7 +228,7 @@ export class MockTranscriptionProvider extends TranscriptionProvider {
     this.shouldFail = shouldFail;
   }
 
-  async transcribe({ audioFilePath, language = 'en', duration = 30, defaultSegments = null, signal } = {}) {
+  async transcribe({ audioFilePath: _audioFilePath, language = 'en', duration = 30, defaultSegments = null, signal: _signal } = {}) {
     if (this.shouldFail) {
       throw new Error('Mock transcription provider intentional failure for testing.');
     }
@@ -161,7 +256,6 @@ export class MockTranscriptionProvider extends TranscriptionProvider {
       start: parseFloat((idx * step).toFixed(2)),
       end: parseFloat(((idx + 1) * step).toFixed(2)),
       text: sentence,
-      speaker: idx % 2 === 0 ? 'Speaker 1' : 'Speaker 2',
       confidence: 0.97,
     }));
 

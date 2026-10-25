@@ -41,12 +41,110 @@ const FALLBACK_TRANSLATION_MAP = {
   }
 };
 
+function translateWithDeepLTargetCode(languageCode) {
+  const normalized = String(languageCode || '').trim().toLowerCase();
+  const overrides = {
+    en: 'EN-US',
+    pt: 'PT-PT',
+    zh: 'ZH',
+  };
+  return overrides[normalized] || normalized.toUpperCase();
+}
+
+async function translateWithDeepL({ text, sourceLanguage, targetLanguage, apiKey }) {
+  const configuredBaseUrl = process.env.DEEPL_API_BASE_URL;
+  const baseUrl = configuredBaseUrl || (apiKey.endsWith(':fx')
+    ? 'https://api-free.deepl.com'
+    : 'https://api.deepl.com');
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v2/translate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `DeepL-Auth-Key ${apiKey}`,
+    },
+    body: JSON.stringify({
+      text: [text],
+      source_lang: translateWithDeepLTargetCode(sourceLanguage),
+      target_lang: translateWithDeepLTargetCode(targetLanguage),
+      preserve_formatting: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`DeepL translation request failed (${response.status}).`);
+  }
+  const data = await response.json();
+  const translated = data.translations?.[0]?.text?.trim();
+  if (!translated) throw new Error('DeepL returned no translated text.');
+  return translated;
+}
+
+async function translateBatchWithOpenAI({
+  items = [],
+  sourceLanguage = 'en',
+  targetLanguage = 'uz',
+  apiKey,
+}) {
+  if (!items.length || !apiKey) return new Map();
+
+  const prompt = `You are an expert dubbing translator and localization engineer specializing in natural spoken speech. Translate the following dialogue segments from ${sourceLanguage} to ${targetLanguage}.
+Guidelines:
+1. Maintain natural conversational tone, emotional nuances, and pacing suitable for dubbing.
+2. The translated text should closely match the natural spoken duration of the original phrase.
+3. Return a JSON object with the property "translations", containing an array of objects with "index" (number) and "translatedText" (string):
+{"translations": [{"index": 0, "translatedText": "..."}]}`;
+
+  const payload = items.map((item) => ({
+    index: item.batchIndex,
+    speaker: item.speaker || 'Speaker',
+    text: item.originalText,
+  }));
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_TRANSLATION_MODEL || 'gpt-4o-mini',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: prompt },
+        { role: 'user', content: JSON.stringify({ segments: payload }) },
+      ],
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI batch translation failed (${response.status}).`);
+  }
+
+  const data = await response.json();
+  const rawContent = data.choices?.[0]?.message?.content?.trim();
+  if (!rawContent) throw new Error('OpenAI returned empty response for batch translation.');
+
+  const parsed = JSON.parse(rawContent);
+  const translations = Array.isArray(parsed.translations)
+    ? parsed.translations
+    : (Array.isArray(parsed.segments) ? parsed.segments : []);
+
+  const resultMap = new Map();
+  for (const entry of translations) {
+    if (typeof entry.index === 'number' && typeof entry.translatedText === 'string') {
+      resultMap.set(entry.index, entry.translatedText.trim());
+    }
+  }
+  return resultMap;
+}
+
 export async function translateText({
   text,
   sourceLanguage = 'en',
   targetLanguage = 'uz',
 } = {}) {
   const openaiKey = process.env.OPENAI_API_KEY;
+  const deepLKey = process.env.DEEPL_API_KEY;
   const targetCode = (targetLanguage || 'uz').toLowerCase();
 
   // 1. Try OpenAI GPT Translation if API key configured
@@ -59,7 +157,7 @@ export async function translateText({
           Authorization: `Bearer ${openaiKey}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: process.env.OPENAI_TRANSLATION_MODEL || 'gpt-4o-mini',
           messages: [
             {
               role: 'system',
@@ -84,16 +182,37 @@ export async function translateText({
     }
   }
 
-  // 2. Dictionary Fallback
+  // 2. DeepL fallback. Its API accepts a JSON `text` array and returns a
+  // matching `translations` array, which keeps this adapter provider-agnostic.
+  if (deepLKey && text && text.trim()) {
+    try {
+      return await translateWithDeepL({
+        text,
+        sourceLanguage,
+        targetLanguage,
+        apiKey: deepLKey,
+      });
+    } catch (err) {
+      console.warn('[DeepL Translation API] Error, trying local fallback:', err.message);
+    }
+  }
+
+  // 3. Small deterministic fallback for local demos and tests.
   const dict = FALLBACK_TRANSLATION_MAP[targetCode];
   if (dict && dict[text]) {
     return dict[text];
   }
 
-  if (targetCode === 'uz') {
-    return text ? `${text}` : '';
+  if (sourceLanguage.toLowerCase() === targetCode) {
+    return text || '';
   }
 
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('No translation provider is configured for this text. Set OPENAI_API_KEY or DEEPL_API_KEY.');
+  }
+
+  // Development fallback is deliberately explicit in the UI/job result rather
+  // than pretending the original text was translated in production.
   return text || '';
 }
 
@@ -101,19 +220,102 @@ export async function translateSegments({
   segments = [],
   sourceLanguage = 'en',
   targetLanguage = 'uz',
+  preserveExistingTranslations = false,
 } = {}) {
-  const results = [];
-  for (const seg of segments) {
-    const translatedText = await translateText({
-      text: seg.text || seg.originalText || '',
-      sourceLanguage,
-      targetLanguage,
-    });
-    results.push({
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const BATCH_SIZE = 25;
+
+  // 1. Identify which segments already have usable translations and which need translation
+  const pendingItems = [];
+  const preparedSegments = segments.map((seg, idx) => {
+    const originalText = preserveExistingTranslations
+      ? seg.originalText || seg.text || ''
+      : seg.text || seg.originalText || '';
+
+    const hasUsableTranslation = typeof seg.translatedText === 'string' &&
+      seg.translatedText.trim() &&
+      (seg.translationEdited === true ||
+        (seg.translationEdited !== false && seg.translatedText !== originalText));
+
+    if (preserveExistingTranslations && hasUsableTranslation) {
+      return {
+        ...seg,
+        originalText,
+        translatedText: seg.translatedText,
+        needsTranslation: false,
+      };
+    }
+
+    if (!originalText || !originalText.trim()) {
+      return {
+        ...seg,
+        originalText,
+        translatedText: originalText,
+        needsTranslation: false,
+      };
+    }
+
+    const item = {
+      segIndex: idx,
+      batchIndex: pendingItems.length,
+      originalText,
+      speaker: seg.speaker,
+    };
+    pendingItems.push(item);
+
+    return {
       ...seg,
-      originalText: seg.text || seg.originalText || '',
-      translatedText,
-    });
+      originalText,
+      translatedText: '',
+      needsTranslation: true,
+    };
+  });
+
+  // 2. If there are pending items and OpenAI is available, attempt batch translation in chunks
+  const translatedMap = new Map();
+  if (pendingItems.length > 0 && openaiKey) {
+    for (let i = 0; i < pendingItems.length; i += BATCH_SIZE) {
+      const chunk = pendingItems.slice(i, i + BATCH_SIZE);
+      try {
+        const batchResults = await translateBatchWithOpenAI({
+          items: chunk,
+          sourceLanguage,
+          targetLanguage,
+          apiKey: openaiKey,
+        });
+        for (const item of chunk) {
+          if (batchResults.has(item.batchIndex)) {
+            translatedMap.set(item.segIndex, batchResults.get(item.batchIndex));
+          }
+        }
+      } catch (err) {
+        console.warn('[Translation API] Batch translation error, falling back to individual translation:', err.message);
+      }
+    }
   }
-  return results;
+
+  // 3. For any segments that weren't translated by the batch (or if batch was not used/failed),
+  // fall back to individual translateText (handles DeepL, dictionary fallback, dev fallback, etc.)
+  for (const item of pendingItems) {
+    if (!translatedMap.has(item.segIndex)) {
+      const translated = await translateText({
+        text: item.originalText,
+        sourceLanguage,
+        targetLanguage,
+      });
+      translatedMap.set(item.segIndex, translated);
+    }
+  }
+
+  // 4. Assemble final results
+  return preparedSegments.map((seg, idx) => {
+    const { needsTranslation: _needsTranslation, ...cleanSeg } = seg;
+    if (translatedMap.has(idx)) {
+      return {
+        ...cleanSeg,
+        translatedText: translatedMap.get(idx),
+      };
+    }
+    return cleanSeg;
+  });
 }

@@ -37,6 +37,49 @@ export interface GenerateDubbingResponse {
   message?: string;
 }
 
+export interface ProjectListParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: 'all' | Project['status'] | 'ready';
+}
+
+export interface ProjectListResponse {
+  projects: Project[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+
+export interface ApiErrorPayload {
+  error?: string;
+  code?: string;
+  details?: string[];
+  requestId?: string;
+}
+
+/** A typed API error keeps backend error details available to the UI when needed. */
+export class ApiRequestError extends Error {
+  status: number;
+  code?: string;
+  details: string[];
+  requestId?: string;
+
+  constructor(status: number, payload: ApiErrorPayload, fallbackMessage: string) {
+    super(payload.error || fallbackMessage);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.code = payload.code;
+    this.details = Array.isArray(payload.details) ? payload.details : [];
+    this.requestId = payload.requestId;
+  }
+}
+
 class ApiClient {
   private baseUrl = '/api';
 
@@ -55,8 +98,11 @@ class ApiClient {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      const errorMsg = data.error || `Request failed with status ${response.status}`;
-      throw new Error(errorMsg);
+      throw new ApiRequestError(
+        response.status,
+        data as ApiErrorPayload,
+        `Request failed with status ${response.status}`,
+      );
     }
 
     return data as T;
@@ -64,10 +110,10 @@ class ApiClient {
 
   // 1. AUTHENTICATION
   public auth = {
-    signup: async (email: string, password: string, name?: string): Promise<AuthResponse> => {
+    signup: async (email: string, password: string, name?: string, inviteToken?: string | null): Promise<AuthResponse> => {
       return this.request<AuthResponse>('/auth/signup', {
         method: 'POST',
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, name, inviteToken }),
       });
     },
 
@@ -78,6 +124,20 @@ class ApiClient {
       });
     },
 
+    forgotPassword: async (email: string): Promise<{ message: string }> => {
+      return this.request<{ message: string }>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+    },
+
+    resetPassword: async (token: string, password: string): Promise<{ message: string }> => {
+      return this.request<{ message: string }>('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password }),
+      });
+    },
+
     me: async (): Promise<{ user: UserProfile }> => {
       return this.request<{ user: UserProfile }>('/auth/me');
     },
@@ -85,7 +145,7 @@ class ApiClient {
     logout: async (): Promise<void> => {
       try {
         await this.request('/auth/signout', { method: 'POST' });
-      } catch (_) {}
+      } catch {}
     },
   };
 
@@ -106,7 +166,7 @@ class ApiClient {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to upload media file.');
+        throw new ApiRequestError(response.status, data as ApiErrorPayload, 'Failed to upload media file.');
       }
       return data as UploadResponse;
     },
@@ -117,8 +177,34 @@ class ApiClient {
       });
     },
 
+    download: async (id: string, filename: string): Promise<void> => {
+      const response = await fetch(`${this.baseUrl}/media/${id}/download`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new ApiRequestError(response.status, data as ApiErrorPayload, 'Failed to download media.');
+      }
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    },
+
     extractUrl: async (url: string): Promise<{ url: string; title: string; thumbnailUrl: string; duration: number }> => {
       return this.request<{ url: string; title: string; thumbnailUrl: string; duration: number }>('/media/extract-url', {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      });
+    },
+
+    importUrl: async (url: string): Promise<UploadResponse> => {
+      return this.request<UploadResponse>('/media/import-url', {
         method: 'POST',
         body: JSON.stringify({ url }),
       });
@@ -127,6 +213,22 @@ class ApiClient {
 
   // 3. AI DUBBING ENGINE & EXPORTS
   public dubbing = {
+    checkMinutes: async (mediaId: string): Promise<{
+      canStart: boolean;
+      duration: number;
+      requiredMinutes: number;
+      minutesBalance: number;
+    }> => this.request('/dubbing/check-minutes', {
+      method: 'POST',
+      body: JSON.stringify({ mediaId }),
+    }),
+    getCapabilities: async (): Promise<{
+      canRenderFinalDub: boolean;
+      requiredForFinalRender: string[];
+      renderableVoiceIds: string[];
+      canCloneVoices: boolean;
+    }> => this.request('/dubbing/capabilities'),
+
     process: async (payload: {
       projectId?: string;
       mediaId?: string;
@@ -134,17 +236,43 @@ class ApiClient {
       originalLanguage?: string;
       targetLanguage?: string;
       voiceId?: string;
+      autoCloneVoices?: boolean;
+      voiceCloningConsent?: boolean;
       duration?: number;
-    }): Promise<{ jobId: string; status: string; message: string }> => {
-      return this.request<{ jobId: string; status: string; message: string }>('/dubbing/process', {
+    }): Promise<{ jobId: string; status: string; reservedMinutes: number; minutesBalance: number; message: string }> => {
+      return this.request('/dubbing/process', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
     },
 
-    getJob: async (jobId: string): Promise<{ job: any }> => {
-      return this.request<{ job: any }>(`/dubbing/jobs/${jobId}`);
+    getJob: async (jobId: string): Promise<{ job: any; minutesBalance: number }> => {
+      return this.request<{ job: any; minutesBalance: number }>(`/dubbing/jobs/${jobId}`);
     },
+
+    getLatestProjectJob: async (projectId: string): Promise<{ jobId: string; status: string; job: any }> => {
+      return this.request(`/dubbing/projects/${projectId}/jobs/latest`);
+    },
+
+    retryJob: async (jobId: string): Promise<{ jobId: string; status: string; attempt: number; maxAttempts: number; reservedMinutes: number; minutesBalance: number; message: string }> => {
+      return this.request(`/dubbing/jobs/${jobId}/retry`, { method: 'POST' });
+    },
+
+    getUsage: async (): Promise<{
+      minutesBalance: number;
+      usage: Array<{
+        id: string;
+        projectId: string | null;
+        jobId: string;
+        minutes: number;
+        status: 'reserved' | 'consumed' | 'refunded';
+        failureReason: string | null;
+        reservedAt: string;
+        consumedAt: string | null;
+        refundedAt: string | null;
+        updatedAt: string;
+      }>;
+    }> => this.request('/dubbing/usage'),
 
     transcribe: async (payload: {
       mediaId?: string;
@@ -159,6 +287,22 @@ class ApiClient {
         body: JSON.stringify(payload),
       });
     },
+
+    getTranscriptionJob: async (jobId: string): Promise<{ jobId: string; status: string; progress: number; job: any }> => {
+      return this.request(`/dubbing/transcribe/jobs/${jobId}`);
+    },
+
+    getLatestProjectTranscriptionJob: async (projectId: string): Promise<{ jobId: string; status: string; job: any }> => {
+      return this.request(`/dubbing/transcribe/projects/${projectId}/jobs/latest`);
+    },
+
+    retryTranscriptionJob: async (jobId: string): Promise<{
+      jobId: string;
+      status: string;
+      attempt: number;
+      maxAttempts: number;
+      message: string;
+    }> => this.request(`/dubbing/transcribe/jobs/${jobId}/retry`, { method: 'POST' }),
 
     translate: async (payload: { text?: string; segments?: TranscriptSegment[]; sourceLanguage?: string; targetLanguage?: string }): Promise<any> => {
       return this.request<any>('/dubbing/translate', {
@@ -198,7 +342,7 @@ class ApiClient {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to export subtitles.');
+        throw new ApiRequestError(response.status, data as ApiErrorPayload, 'Failed to export subtitles.');
       }
 
       const blob = await response.blob();
@@ -223,27 +367,19 @@ class ApiClient {
       return this.request<{ voices: Voice[] }>(`/voices${query}`);
     },
 
-    clone: async (voiceData: {
-      name: string;
-      language?: string;
-      languageCode?: string;
-      gender?: 'male' | 'female' | 'neutral';
-      style?: Voice['style'];
-      tone?: string;
-      tags?: string[];
-      previewUrl?: string;
-    }): Promise<{ voice: Voice; message: string }> => {
-      return this.request<{ voice: Voice; message: string }>('/voices/clone', {
-        method: 'POST',
-        body: JSON.stringify(voiceData),
-      });
-    },
   };
 
   // 5. PROJECTS MANAGEMENT
   public projects = {
-    list: async (): Promise<{ projects: Project[] }> => {
-      return this.request<{ projects: Project[] }>('/projects');
+    list: async (params: ProjectListParams = {}): Promise<ProjectListResponse> => {
+      const query = new URLSearchParams();
+      if (params.page !== undefined) query.set('page', String(params.page));
+      if (params.limit !== undefined) query.set('limit', String(params.limit));
+      if (params.search) query.set('search', params.search);
+      if (params.status && params.status !== 'all') query.set('status', params.status);
+      const queryString = query.toString();
+      const suffix = queryString ? `?${queryString}` : '';
+      return this.request<ProjectListResponse>(`/projects${suffix}`);
     },
 
     create: async (project: Partial<Project>): Promise<{ project: Project }> => {
@@ -320,4 +456,3 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
-

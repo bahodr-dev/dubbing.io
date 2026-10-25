@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export const COOKIE_NAME = 'dubbing_session';
+export const COOKIE_NAME = 'dubla_session';
 export const TOKEN_EXPIRES_IN = '30d';
 
 export function getJwtSecret() {
@@ -13,6 +13,9 @@ export function getJwtSecret() {
       return 'test_jwt_secret_vitest_secure_key_1234567890';
     }
     throw new Error('FATAL SECURITY ERROR: process.env.JWT_SECRET is missing. Server cannot sign session tokens.');
+  }
+  if (process.env.NODE_ENV === 'production' && secret.length < 32) {
+    throw new Error('FATAL SECURITY ERROR: JWT_SECRET must contain at least 32 characters in production.');
   }
   return secret;
 }
@@ -26,6 +29,7 @@ export function generateToken(user) {
       id: user.id,
       email: user.email,
       name: user.name || user.email.split('@')[0],
+      authVersion: Number(user.auth_version || 0),
     },
     getJwtSecret(),
     { expiresIn: TOKEN_EXPIRES_IN }

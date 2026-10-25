@@ -11,6 +11,7 @@ interface TranscriptEditorProps {
   originalLanguage: string;
   currentPlayTime?: number;
   saveStatus?: 'saved' | 'saving' | 'error';
+  onRetryTranscription?: () => void | Promise<void>;
 }
 
 export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
@@ -21,6 +22,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   originalLanguage,
   currentPlayTime,
   saveStatus = 'saved',
+  onRetryTranscription,
 }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'translated' | 'original'>('both');
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
@@ -85,7 +87,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   });
 
   return (
-    <div style={{
+    <div className="transcript-editor" style={{
       backgroundColor: 'var(--c-white)',
       border: 'var(--border-light)',
       borderRadius: 'var(--radius-md)',
@@ -93,7 +95,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
       boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
     }}>
       {/* Header Bar */}
-      <div style={{
+      <div className="transcript-editor-header" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -107,19 +109,26 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h4 style={{ fontSize: '15px', fontWeight: 700 }}>Transcript & Dub Alignment</h4>
             {saveStatus === 'saving' && (
-              <span style={{ fontSize: '11px', color: 'var(--black-60)', fontStyle: 'italic' }}>Saving...</span>
+              <span style={{ fontSize: 'var(--text-meta)', color: 'var(--black-60)', fontStyle: 'italic' }}>Saving...</span>
             )}
             {saveStatus === 'error' && (
-              <span style={{ fontSize: '11px', color: 'var(--c-error, #e53e3e)', fontWeight: 600 }}>Save failed</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-meta)', color: 'var(--c-error, #e53e3e)', fontWeight: 600 }}>
+                Transcript sync failed
+                {onRetryTranscription && (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={onRetryTranscription}>
+                    Retry
+                  </button>
+                )}
+              </span>
             )}
           </div>
-          <p style={{ fontSize: '12px', color: 'var(--black-60)', marginTop: '2px' }}>
+          <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-60)', marginTop: '2px' }}>
             Inspect, edit, and fine-tune synchronized translation segments
           </p>
         </div>
 
         {/* View Segment Tabs */}
-        <div style={{
+        <div className="transcript-view-toggle" role="group" aria-label="Transcript view" style={{
           display: 'flex',
           border: 'var(--border-light)',
           borderRadius: 'var(--radius-sm)',
@@ -129,9 +138,10 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('both')}
+            aria-pressed={activeTab === 'both'}
             style={{
               padding: '6px 12px',
-              fontSize: '12px',
+              fontSize: 'var(--text-control)',
               fontWeight: 600,
               border: 'none',
               background: activeTab === 'both' ? 'var(--black-100)' : 'transparent',
@@ -144,9 +154,10 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('translated')}
+            aria-pressed={activeTab === 'translated'}
             style={{
               padding: '6px 12px',
-              fontSize: '12px',
+              fontSize: 'var(--text-control)',
               fontWeight: 600,
               border: 'none',
               borderLeft: 'var(--border-light)',
@@ -160,9 +171,10 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('original')}
+            aria-pressed={activeTab === 'original'}
             style={{
               padding: '6px 12px',
-              fontSize: '12px',
+              fontSize: 'var(--text-control)',
               fontWeight: 600,
               border: 'none',
               borderLeft: 'var(--border-light)',
@@ -177,7 +189,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
       </div>
 
       {/* Sub-header Search Bar */}
-      <div style={{
+      <div className="transcript-editor-search" style={{
         padding: '10px 20px',
         borderBottom: 'var(--border-light)',
         backgroundColor: 'var(--c-white)',
@@ -194,7 +206,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
           style={{
             border: 'none',
             outline: 'none',
-            fontSize: '12px',
+            fontSize: 'var(--text-input)',
             width: '100%',
             backgroundColor: 'transparent',
             color: 'var(--black-100)',
@@ -214,10 +226,10 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
       </div>
 
       {/* Segments List */}
-      <div style={{ maxHeight: '520px', overflowY: 'auto' }}>
+      <div className="transcript-segments" style={{ maxHeight: '520px', overflowY: 'auto' }}>
         {filteredSegments.length === 0 ? (
-          <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--black-40)', fontSize: '13px' }}>
-            No matching segments found.
+          <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--black-40)', fontSize: 'var(--text-control)' }}>
+            {segments.length === 0 ? 'No transcript yet. Generate a dub to create your transcript.' : 'No matching segments found. Try another search.'}
           </div>
         ) : filteredSegments.map((seg, idx) => {
           const isEditing = editingSegmentId === seg.id;
@@ -240,7 +252,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
               }}
             >
               {/* Row Header: Timestamp & Quick Action */}
-              <div style={{
+              <div className="transcript-segment-header" style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -254,7 +266,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                     }}
                     className="mono"
                     style={{
-                      fontSize: '12px',
+                      fontSize: 'var(--text-control)',
                       fontWeight: 600,
                       backgroundColor: isCurrentActive ? 'var(--black-100)' : 'var(--black-05)',
                       border: isCurrentActive ? '1px solid var(--black-100)' : 'var(--border-light)',
@@ -269,7 +281,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                     {formatTimestamp(seg.startTime)} - {formatTimestamp(seg.endTime)}
                   </button>
 
-                  <span style={{ fontSize: '11px', color: 'var(--black-40)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <span style={{ fontSize: 'var(--text-meta)', color: 'var(--black-40)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {seg.speaker || `Segment ${idx + 1}`}
                   </span>
                 </div>
@@ -279,7 +291,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                     type="button"
                     onClick={() => handlePlaySegment(seg, seg.translatedText, targetLanguage)}
                     className="btn btn-ghost btn-sm"
-                    style={{ padding: '4px 8px', fontSize: '11px' }}
+                    style={{ padding: '4px 8px', fontSize: 'var(--text-control)' }}
                     title="Listen to translated speech"
                   >
                     <Volume2 size={13} />
@@ -291,7 +303,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                       type="button"
                       onClick={() => handleStartEdit(seg)}
                       className="btn btn-ghost btn-sm"
-                      style={{ padding: '4px 8px', fontSize: '11px' }}
+                      style={{ padding: '4px 8px', fontSize: 'var(--text-control)' }}
                     >
                       <Edit3 size={12} />
                       Edit
@@ -302,8 +314,9 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                         type="button"
                         onClick={handleCancelEdit}
                         className="btn btn-ghost btn-sm"
-                        style={{ padding: '4px 8px', fontSize: '11px' }}
+                        style={{ padding: '4px 8px', fontSize: 'var(--text-control)' }}
                         title="Cancel"
+                        aria-label="Cancel transcript edit"
                       >
                         <X size={12} />
                       </button>
@@ -311,7 +324,7 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                         type="button"
                         onClick={() => handleSaveEdit(seg.id)}
                         className="btn btn-primary btn-sm"
-                        style={{ padding: '4px 10px', fontSize: '11px' }}
+                        style={{ padding: '4px 10px', fontSize: 'var(--text-control)' }}
                       >
                         <Check size={12} />
                         Save
@@ -323,11 +336,12 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
 
               {/* Segment Content */}
               {isEditing ? (
-                <div style={{ display: 'grid', gridTemplateColumns: activeTab === 'both' ? '1fr 1fr' : '1fr', gap: '12px' }}>
+                <div className="transcript-segment-content" style={{ display: 'grid', gridTemplateColumns: activeTab === 'both' ? '1fr 1fr' : '1fr', gap: '12px' }}>
                   {(activeTab === 'both' || activeTab === 'original') && (
                     <div>
-                      <label className="label" style={{ fontSize: '10px' }}>Original ({originalLanguage.toUpperCase()})</label>
+                      <label htmlFor={`segment-original-${seg.id}`} className="label" style={{ fontSize: 'var(--text-control)' }}>Original ({originalLanguage.toUpperCase()})</label>
                       <textarea
+                        id={`segment-original-${seg.id}`}
                         className="textarea"
                         rows={2}
                         value={tempOriginal}
@@ -339,14 +353,15 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                             handleCancelEdit();
                           }
                         }}
-                        style={{ fontSize: '13px', lineHeight: 1.4 }}
+                        style={{ fontSize: 'var(--text-input)', lineHeight: 1.4 }}
                       />
                     </div>
                   )}
                   {(activeTab === 'both' || activeTab === 'translated') && (
                     <div>
-                      <label className="label" style={{ fontSize: '10px' }}>Translated ({targetLanguage.toUpperCase()})</label>
+                      <label htmlFor={`segment-translated-${seg.id}`} className="label" style={{ fontSize: 'var(--text-control)' }}>Translated ({targetLanguage.toUpperCase()})</label>
                       <textarea
+                        id={`segment-translated-${seg.id}`}
                         className="textarea"
                         rows={2}
                         value={tempTranslated}
@@ -358,21 +373,21 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                             handleCancelEdit();
                           }
                         }}
-                        style={{ fontSize: '13px', lineHeight: 1.4, fontWeight: 500 }}
+                        style={{ fontSize: 'var(--text-input)', lineHeight: 1.4, fontWeight: 500 }}
                       />
                     </div>
                   )}
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: activeTab === 'both' ? '1fr 1fr' : '1fr', gap: '20px' }}>
+                <div className="transcript-segment-content" style={{ display: 'grid', gridTemplateColumns: activeTab === 'both' ? '1fr 1fr' : '1fr', gap: '20px' }}>
                   {(activeTab === 'both' || activeTab === 'original') && (
                     <div>
                       {activeTab === 'both' && (
-                        <div style={{ fontSize: '11px', color: 'var(--black-40)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-40)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Original ({originalLanguage.toUpperCase()})
                         </div>
                       )}
-                      <p style={{ fontSize: '13.5px', color: 'var(--black-70)', lineHeight: 1.5 }}>
+                      <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-70)', lineHeight: 1.5 }}>
                         {seg.originalText}
                       </p>
                     </div>
@@ -381,11 +396,11 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                   {(activeTab === 'both' || activeTab === 'translated') && (
                     <div>
                       {activeTab === 'both' && (
-                        <div style={{ fontSize: '11px', color: 'var(--black-100)', fontWeight: 600, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <div style={{ fontSize: 'var(--text-meta)', color: 'var(--black-100)', fontWeight: 600, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Dubbed ({targetLanguage.toUpperCase()})
                         </div>
                       )}
-                      <p style={{ fontSize: '14px', color: 'var(--black-100)', fontWeight: 500, lineHeight: 1.5 }}>
+                      <p style={{ fontSize: 'var(--text-body)', color: 'var(--black-100)', fontWeight: 500, lineHeight: 1.5 }}>
                         {seg.translatedText}
                       </p>
                     </div>

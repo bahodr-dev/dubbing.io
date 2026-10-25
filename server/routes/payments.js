@@ -6,8 +6,23 @@ import { PAYMENT_PLANS, getPlan } from '../services/payments/paymentPlans.js';
 import { verifyPaymeAuth, handlePaymeRpc, generatePaymeCheckoutUrl } from '../services/payments/paymeService.js';
 import { handleClickPrepare, handleClickComplete, generateClickCheckoutUrl } from '../services/payments/clickService.js';
 import * as userRepository from '../repositories/userRepository.js';
+import { isPaymentProviderConfigured } from '../services/payments/paymentConfig.js';
+import { applyPaymentCredit } from '../repositories/paymentCreditRepository.js';
 
 export const paymentsRouter = Router();
+const SUPPORTED_CHECKOUT_PROVIDERS = new Set(['payme', 'click']);
+
+function resolveSafeReturnUrl(returnUrl) {
+  const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  if (!returnUrl) return `${appUrl}/dashboard?payment=success`;
+  try {
+    const candidate = new URL(returnUrl);
+    const allowed = new URL(appUrl);
+    return candidate.origin === allowed.origin ? candidate.toString() : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 // 1. GET AVAILABLE PLANS (Public)
 paymentsRouter.get('/plans', (_req, res) => {
@@ -17,9 +32,9 @@ paymentsRouter.get('/plans', (_req, res) => {
       UZS_PER_USD: 12900,
     },
     supportedProviders: [
-      { id: 'payme', name: 'Payme', icon: 'payme', enabled: true },
-      { id: 'click', name: 'Click Up', icon: 'click', enabled: true },
-      { id: 'uzum', name: 'Uzum Pay / Bank Card', icon: 'uzum', enabled: true },
+      { id: 'payme', name: 'Payme', icon: 'payme', enabled: isPaymentProviderConfigured('payme') },
+      { id: 'click', name: 'Click Up', icon: 'click', enabled: isPaymentProviderConfigured('click') },
+      { id: 'uzum', name: 'Uzum Pay / Bank Card', icon: 'uzum', enabled: false },
     ],
   });
 });
@@ -34,6 +49,25 @@ paymentsRouter.post('/checkout', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Selected plan does not exist.' });
     }
 
+    if (!['monthly', 'yearly'].includes(billingCycle)) {
+      return res.status(400).json({ error: 'billingCycle must be monthly or yearly.' });
+    }
+    if (!SUPPORTED_CHECKOUT_PROVIDERS.has(provider)) {
+      return res.status(400).json({ error: 'Selected payment provider is not available.' });
+    }
+    if (!isPaymentProviderConfigured(provider)) {
+      return res.status(503).json({ error: 'This payment provider is not configured yet.', code: 'PAYMENT_PROVIDER_UNAVAILABLE' });
+    }
+    if (plan.tier === 'addon' && billingCycle !== 'monthly') {
+      return res.status(400).json({ error: 'Minute packs are available as a one-time monthly purchase only.' });
+    }
+    const safeReturnUrl = resolveSafeReturnUrl(returnUrl);
+    if (!safeReturnUrl) {
+      return res.status(400).json({ error: 'returnUrl must use the configured application origin.' });
+    }
+
+    db.prepare(`UPDATE orders SET status = 'cancelled' WHERE user_id = ? AND status = 'pending' AND created_at < datetime('now', '-24 hours')`)
+      .run(req.user.id);
     const isYearly = billingCycle === 'yearly';
     const amountUzs = isYearly ? (plan.priceYearlyUZS * 12 || plan.priceMonthlyUZS) : plan.priceMonthlyUZS;
     const amountUsd = isYearly ? (plan.priceYearlyUSD * 12 || plan.priceMonthlyUSD) : plan.priceMonthlyUSD;
@@ -60,8 +94,11 @@ paymentsRouter.post('/checkout', authenticateToken, (req, res) => {
     );
 
     // Generate direct checkout URL for the selected provider
-    const paymeUrl = generatePaymeCheckoutUrl({ orderId, amountUzs, returnUrl });
-    const clickUrl = generateClickCheckoutUrl({ orderId, amountUzs, returnUrl });
+    const providerReturnUrl = new URL(safeReturnUrl);
+    providerReturnUrl.searchParams.delete('payment');
+    providerReturnUrl.searchParams.set('paymentOrder', orderId);
+    const paymeUrl = provider === 'payme' ? generatePaymeCheckoutUrl({ orderId, amountUzs, returnUrl: providerReturnUrl.toString() }) : '';
+    const clickUrl = provider === 'click' ? generateClickCheckoutUrl({ orderId, amountUzs, returnUrl: providerReturnUrl.toString() }) : '';
 
     return res.status(201).json({
       order: {
@@ -104,7 +141,7 @@ paymentsRouter.get('/orders', authenticateToken, (req, res) => {
       orders,
       subscription: {
         plan: user?.plan || 'free',
-        minutesBalance: user?.minutes_balance || 5.0,
+        minutesBalance: user?.minutes_balance ?? 5.0,
         subscriptionExpiresAt: user?.subscription_expires_at || null,
       },
     });
@@ -130,7 +167,7 @@ paymentsRouter.get('/orders/:id', authenticateToken, (req, res) => {
       order,
       subscription: {
         plan: user?.plan || 'free',
-        minutesBalance: user?.minutes_balance || 5.0,
+        minutesBalance: user?.minutes_balance ?? 5.0,
         subscriptionExpiresAt: user?.subscription_expires_at || null,
       },
     });
@@ -143,6 +180,13 @@ paymentsRouter.get('/orders/:id', authenticateToken, (req, res) => {
 // 5. SIMULATE TEST PAYMENT SUCCESS (Protected, For dev & local demo testing)
 paymentsRouter.post('/simulate-success', authenticateToken, (req, res) => {
   try {
+    // This route credits a purchase without a gateway callback. It is useful
+    // for the local checkout demo, but must never be available to customers
+    // in a deployed environment.
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({ error: 'Not found.' });
+    }
+
     const { orderId } = req.body;
     if (!orderId) {
       return res.status(400).json({ error: 'Order ID is required.' });
@@ -157,16 +201,13 @@ paymentsRouter.post('/simulate-success', authenticateToken, (req, res) => {
       return res.json({ message: 'Order is already completed.', order });
     }
 
-    // Mark order completed
-    db.prepare(`UPDATE orders SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(order.id);
-
-    // Credit user subscription and minutes
-    const planTier = order.plan_id === 'pro' ? 'pro' : (order.plan_id === 'creator' ? 'creator' : 'free');
-    const updatedUser = userRepository.creditSubscription(order.user_id, {
-      plan: planTier,
-      minutesToAdd: order.minutes_credited,
-      durationDays: order.billing_cycle === 'yearly' ? 365 : 30,
-    });
+    if (order.status !== 'pending') {
+      return res.status(409).json({ error: 'Only pending orders can be activated.' });
+    }
+    const updatedUser = db.transaction(() => {
+      db.prepare(`UPDATE orders SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(order.id);
+      return applyPaymentCredit(order.id);
+    }).immediate();
 
     return res.json({
       message: `🎉 Payment successful! ${order.minutes_credited} minutes added to your account.`,
@@ -186,7 +227,7 @@ paymentsRouter.post('/payme', async (req, res) => {
     if (!verifyPaymeAuth(authHeader)) {
       return res.status(200).json({
         error: { code: -32504, message: 'Access denied. Invalid Payme merchant secret.' },
-        id: req.body?.id || null,
+        id: req.body?.id ?? null,
       });
     }
 
@@ -195,8 +236,8 @@ paymentsRouter.post('/payme', async (req, res) => {
   } catch (err) {
     console.error('Payme webhook error:', err);
     return res.status(200).json({
-      error: { code: -32300, message: err.message || 'Payme RPC error.' },
-      id: req.body?.id || null,
+      error: { code: -32300, message: 'Payme RPC error.' },
+      id: req.body?.id ?? null,
     });
   }
 });

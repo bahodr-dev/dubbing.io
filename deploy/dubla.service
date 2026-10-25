@@ -1,0 +1,23 @@
+[Unit]
+Description=dubla.uz API and persistent dubbing worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dubla
+Group=dubla
+WorkingDirectory=/opt/dubla/current
+EnvironmentFile=/etc/dubla/dubla.env
+ExecStart=/usr/bin/node --import ./server/instrument.js server/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=150
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dubla
+
+[Install]
+WantedBy=multi-user.target
