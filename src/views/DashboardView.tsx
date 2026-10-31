@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import type { Project, ProjectStatus, Voice, ProjectLoadState } from '../types';
+import type { NewDubOptions, Project, ProjectStatus, Voice, ProjectLoadState } from '../types';
 import { VOICES } from '../data/voices';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
@@ -25,7 +25,7 @@ interface DashboardViewProps {
   projectLoadState?: ProjectLoadState;
   onRetryLoadProjects?: () => void;
   onOpenProject: (project: Project) => void;
-  onCreateProject?: (project: Project) => void | Promise<void>;
+  onCreateProject?: (project: Project, options: NewDubOptions) => void | Promise<void>;
   onOpenNewDub: () => void;
   onSelectPlan?: (plan: string) => void;
   onDeleteProject: (projectId: string) => void | Promise<void>;
@@ -160,9 +160,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       .slice(0, 4);
   }, [projects, recentSearch]);
 
-  const handleProjectCreated = async (newProj: Project) => {
+  const handleProjectCreated = async (newProj: Project, options: NewDubOptions) => {
     if (onCreateProject) {
-      await onCreateProject(newProj);
+      await onCreateProject(newProj, options);
     } else {
       await onOpenProject(newProj);
     }

@@ -42,9 +42,12 @@ describe('Saved transcript in dubbing jobs', () => {
       userId: signup.body.user.id,
       projectId: project.body.project.id,
       duration: 3,
+      speechCadence: 'fast',
     });
     const stored = dubbingJobRepo.findDubbingJobById(job.id);
     const params = dubbingJobRepo.getDubbingJobParams(stored);
+    expect(params.speechCadence).toBe('fast');
+    expect(dubbingJobRepo.formatDubbingJob(stored).speechCadence).toBe('fast');
     expect(params.savedSegments).toEqual(originalSegments);
     expect(params.speakerVoices).toEqual({ 'Speaker 1': 'voice-dilnoza' });
     expect(resolveSegmentVoiceId(originalSegments[0], params)).toBe('voice-dilnoza');
@@ -94,11 +97,12 @@ describe('Saved transcript in dubbing jobs', () => {
       .rejects.toThrow(/not connected to a speech provider/i);
   });
 
-  it('requires explicit speaker permission before scheduling automatic cloning', () => {
+  it('requires a saved project for automatic cloning', () => {
+    vi.stubEnv('ELEVENLABS_API_KEY', 'test');
     expect(() => JobManager.createJob({
-      userId: 'user-1', projectId: 'project-1', duration: 30,
+      userId: 'user-1', projectId: null, duration: 30,
       autoCloneVoices: true, voiceCloningConsent: false,
-    })).toThrow(/permission from every speaker/i);
+    })).toThrow(/saved project/i);
   });
 
   it('does not fall back to a preset voice when cloned speech synthesis fails', async () => {

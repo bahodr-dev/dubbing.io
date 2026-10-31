@@ -127,11 +127,11 @@ function runFfmpeg(args, timeoutMs) {
 }
 
 /** Produce short-lived, one-file-per-speaker WAV samples for a cloning provider. */
-export async function extractSpeakerSamples({ sourceFilePath, segments, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function extractSpeakerSamples({ sourceFilePath, segments, timeoutMs = DEFAULT_TIMEOUT_MS, sampleOptions = {} } = {}) {
   if (!sourceFilePath || !fs.existsSync(sourceFilePath)) {
     throw new Error('Source media is missing for speaker sample extraction.');
   }
-  const plan = planSpeakerSamples(segments);
+  const plan = planSpeakerSamples(segments, sampleOptions);
   if (plan.ready.length === 0) return { samples: [], insufficient: plan.insufficient, cleanup: () => {} };
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dubla-speaker-samples-'));

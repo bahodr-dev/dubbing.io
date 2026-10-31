@@ -1,4 +1,14 @@
-export type ProjectStatus = 'draft' | 'processing' | 'completed' | 'failed';
+export type ProjectStatus = 'draft' | 'processing' | 'completed' | 'partial' | 'paused' | 'failed';
+export type VoiceMode = 'clone' | 'site';
+export type SpeechCadence = 'natural' | 'fast' | 'narrative';
+export type QualityMode = 'standard' | 'cinema';
+export type Expression = 'neutral' | 'whisper' | 'shout' | 'sad' | 'happy';
+export interface NewDubOptions {
+  qualityMode?: QualityMode;
+  voiceMode: VoiceMode;
+  voiceCloningConsent?: boolean;
+  speechCadence: SpeechCadence;
+}
 
 export interface TranscriptSegment {
   id: string;
@@ -7,9 +17,17 @@ export interface TranscriptSegment {
   originalText: string;
   translatedText: string;
   translationEdited?: boolean;
+  translationLanguage?: string;
+  translationSourceText?: string;
+  expression?: Expression;
+  expressionEdited?: boolean;
+  qualityWarnings?: string[];
+  regenerationStatus?: 'ready' | 'needs_edit' | 'pending';
   speaker?: string;
-  speakerSource?: 'diarization';
+  speakerSource?: 'diarization' | 'manual' | 'manual-unverified';
   confidence?: number;
+  characterId?: string;
+  unresolvedReason?: string;
 }
 
 export interface Voice {
@@ -33,6 +51,10 @@ export interface Language {
 }
 
 export interface Project {
+  qualityMode?: QualityMode;
+  editRevision?: number;
+  dialogueUrl?: string;
+  backgroundUrl?: string;
   id: string;
   title: string;
   description?: string;
@@ -60,7 +82,7 @@ export interface Project {
   fileSize?: string;
 }
 
-export type JobStatus = 'pending' | 'queued' | 'transcribing' | 'translating' | 'synthesizing' | 'rendering' | 'completed' | 'failed';
+export type JobStatus = 'pending' | 'queued' | 'transcribing' | 'translating' | 'synthesizing' | 'rendering' | 'completed' | 'partial' | 'paused' | 'failed';
 
 export interface ProcessingStep {
   id: string;

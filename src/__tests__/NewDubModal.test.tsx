@@ -19,11 +19,15 @@ afterEach(() => vi.restoreAllMocks());
 describe('New project form', () => {
   it('requires both a project name and a media source', () => {
     render(<NewDubModal isOpen onClose={vi.fn()} onCreateProject={vi.fn()} />);
-    const submit = screen.getByRole('button', { name: 'Enter Studio' });
+    const submit = screen.getByRole('button', { name: 'Start dubbing' });
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'My video' } });
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Or paste a direct video or audio file URL'), { target: { value: 'https://example.com/video.mp4' } });
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: /Use site voices/i }));
+    fireEvent.click(screen.getByLabelText('Speech Cadence'));
+    fireEvent.click(screen.getByRole('option', { name: /Dynamic Lip Sync/ }));
     expect(submit).toBeEnabled();
   });
 
@@ -37,11 +41,14 @@ describe('New project form', () => {
       target: { files: [new File(['video'], 'Demo.mp4', { type: 'video/mp4' })] },
     });
     expect(screen.getByText(/selected — ready to upload/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Studio' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Use site voices/i }));
+    fireEvent.click(screen.getByLabelText('Speech Cadence'));
+    fireEvent.click(screen.getByRole('option', { name: /Dynamic Lip Sync/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start dubbing' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not upload'));
     expect(onClose).not.toHaveBeenCalled();
     expect(onCreateProject).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Enter Studio' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Start dubbing' })).toBeEnabled();
   });
 
   it('checks remaining minutes before uploading and stays on the form when none remain', async () => {
@@ -51,7 +58,10 @@ describe('New project form', () => {
     fireEvent.change(screen.getByLabelText('Choose video file'), {
       target: { files: [new File(['video'], 'Demo.mp4', { type: 'video/mp4' })] },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Studio' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Use site voices/i }));
+    fireEvent.click(screen.getByLabelText('Speech Cadence'));
+    fireEvent.click(screen.getByRole('option', { name: /Dynamic Lip Sync/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start dubbing' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No dubbing minutes remain'));
     expect(api.media.upload).not.toHaveBeenCalled();
     expect(onCreateProject).not.toHaveBeenCalled();
@@ -72,7 +82,10 @@ describe('New project form', () => {
     fireEvent.change(screen.getByLabelText('Choose video file'), {
       target: { files: [new File(['video'], 'Long.mp4', { type: 'video/mp4' })] },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Studio' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Use site voices/i }));
+    fireEvent.click(screen.getByLabelText('Speech Cadence'));
+    fireEvent.click(screen.getByRole('option', { name: /Dynamic Lip Sync/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start dubbing' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('60.00 dubbing minutes'));
     expect(api.media.delete).toHaveBeenCalledWith('media-long');
     expect(onCreateProject).not.toHaveBeenCalled();

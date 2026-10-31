@@ -97,7 +97,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
           setCurrentStepIdx(4);
         } else if (job.status === 'rendering') {
           setCurrentStepIdx(5);
-        } else if (job.status === 'completed') {
+        } else if ((job.status === 'completed' || job.status === 'partial')) {
           setCurrentStepIdx(5);
           setProgressPercent(100);
           isPolling = false;
@@ -107,7 +107,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
             }
           }, 500);
           return;
-        } else if (job.status === 'failed') {
+        } else if ((job.status === 'failed' || job.status === 'paused')) {
           isPolling = false;
           const msg = job.error || 'Dubbing process encountered an error.';
           setJobError(msg);

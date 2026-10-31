@@ -11,7 +11,7 @@ export function canCloneVoices() {
 }
 
 /** Compare the editable transcript with server-owned diarization evidence. */
-export function verifyProjectDiarization({ userId, projectId, mediaId, segments } = {}) {
+export function verifyProjectDiarization({ userId, projectId, mediaId, segments, allowSpeakerCorrections = false } = {}) {
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error('Transcribe the source video before automatic voice cloning.');
   }
@@ -32,7 +32,8 @@ export function verifyProjectDiarization({ userId, projectId, mediaId, segments 
   for (const segment of segments) {
     const trusted = byId.get(segment?.id);
     if (!trusted || trusted.speaker_source !== 'diarization' || !trusted.speaker ||
-        segment.speaker !== trusted.speaker ||
+        (!allowSpeakerCorrections && segment.speaker !== trusted.speaker) ||
+        (allowSpeakerCorrections && (typeof segment.speaker !== 'string' || !segment.speaker.trim())) ||
         !Number.isFinite(segment.startTime) || !Number.isFinite(segment.endTime) ||
         Math.abs(segment.startTime - trusted.start_time) > 0.01 ||
         Math.abs(segment.endTime - trusted.end_time) > 0.01) {
@@ -106,12 +107,9 @@ export async function cleanupTerminalVoiceClones() {
 }
 
 /** Create one project-owned provider voice per confidently identified speaker. */
-export async function cloneJobSpeakers({ jobId, userId, projectId, segments, consentAt } = {}) {
+export async function cloneJobSpeakers({ jobId, userId, projectId, segments, cleanDialoguePath = null } = {}) {
   if (!canCloneVoices()) throw new Error('ELEVENLABS_API_KEY is required for automatic voice cloning.');
-  if (!consentAt || !Number.isFinite(Date.parse(consentAt))) {
-    throw new Error('Permission from every speaker must be confirmed before voice cloning.');
-  }
-  const job = db.prepare('SELECT id, media_id FROM dubbing_jobs WHERE id = ? AND user_id = ? AND project_id = ?')
+  const job = db.prepare('SELECT id, media_id, params_json FROM dubbing_jobs WHERE id = ? AND user_id = ? AND project_id = ?')
     .get(jobId, userId, projectId);
   const project = db.prepare('SELECT id, source_media_id FROM projects WHERE id = ? AND user_id = ?')
     .get(projectId, userId);
@@ -125,7 +123,8 @@ export async function cloneJobSpeakers({ jobId, userId, projectId, segments, con
   if (!media || !sourceFilePath.startsWith(`${storageRoot}${path.sep}`) || !fs.existsSync(sourceFilePath)) {
     throw new Error('Source media is unavailable for voice cloning.');
   }
-  verifyProjectDiarization({ userId, projectId, mediaId: job.media_id, segments });
+  verifyProjectDiarization({ userId, projectId, mediaId: job.media_id, segments,
+    allowSpeakerCorrections: Boolean(cleanDialoguePath) && JSON.parse(job.params_json || '{}').qualityMode === 'cinema' });
   const plan = planSpeakerSamples(segments);
   if (plan.ready.length === 0 || plan.insufficient.length > 0) {
     const names = plan.insufficient.map((entry) => entry.speaker).join(', ');
@@ -135,7 +134,7 @@ export async function cloneJobSpeakers({ jobId, userId, projectId, segments, con
   const staleFailures = await cleanupJobVoiceClones(jobId);
   if (staleFailures.length > 0) throw new Error('Could not remove previous job voice clones before retrying.');
 
-  const extracted = await extractSpeakerSamples({ sourceFilePath, segments });
+  const extracted = await extractSpeakerSamples({ sourceFilePath: cleanDialoguePath || sourceFilePath, segments });
   try {
     const voices = new Map();
     for (const sample of extracted.samples) {
@@ -149,7 +148,7 @@ export async function cloneJobSpeakers({ jobId, userId, projectId, segments, con
             id, job_id, user_id, project_id, speaker, provider_voice_id, consent_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(`clone-${randomUUID()}`, jobId, userId, projectId, sample.speaker,
-          clone.providerVoiceId, consentAt);
+          clone.providerVoiceId, ''); // Deprecated legacy column; no per-job consent assertion.
       } catch (error) {
         await deleteInstantVoiceClone(clone.providerVoiceId);
         throw error;

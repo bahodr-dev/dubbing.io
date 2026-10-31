@@ -31,21 +31,26 @@ function readLocalDuration(file: File): Promise<number | null> {
 }
 
 /** Check the live balance before transferring a file. Browser duration is only an early hint. */
-export async function checkMinutesBeforeUpload(file?: File | null): Promise<void> {
+export async function checkMinutesBeforeUpload(file?: File | null, autoCloneVoices = false, qualityMode: 'standard' | 'cinema' = 'standard'): Promise<void> {
+  if (qualityMode === 'cinema') {
+    const caps = await api.dubbing.getCapabilities();
+    if (!caps.cinema?.ready) throw new Error('Cinema quality is not available for this account.');
+  }
   const { minutesBalance } = await api.dubbing.getUsage();
   if (!Number.isFinite(minutesBalance) || minutesBalance <= 0) {
     throw new Error('No dubbing minutes remain on your plan. Add minutes before starting.');
   }
   if (!file) return;
   const localDuration = await readLocalDuration(file);
-  if (localDuration && requiredMinutesForDuration(localDuration) > minutesBalance + 0.000001) {
-    throw new Error(insufficientMinutesMessage(requiredMinutesForDuration(localDuration), minutesBalance));
+  const required = localDuration ? requiredMinutesForDuration(localDuration) * (qualityMode === 'cinema' || autoCloneVoices ? 1.5 : 1) : 0;
+  if (required > minutesBalance + 0.000001) {
+    throw new Error(insufficientMinutesMessage(required, minutesBalance));
   }
 }
 
 /** The server probes the uploaded file and makes the authoritative comparison. */
-export async function checkUploadedMediaMinutes(mediaId: string): Promise<number> {
-  const result = await api.dubbing.checkMinutes(mediaId);
+export async function checkUploadedMediaMinutes(mediaId: string, autoCloneVoices = false, qualityMode: 'standard' | 'cinema' = 'standard'): Promise<number> {
+  const result = await (qualityMode === 'cinema' ? api.dubbing.checkMinutes(mediaId, autoCloneVoices, qualityMode) : api.dubbing.checkMinutes(mediaId, autoCloneVoices));
   if (!result.canStart) {
     throw new Error(insufficientMinutesMessage(result.requiredMinutes, result.minutesBalance));
   }

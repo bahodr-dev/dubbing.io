@@ -4,6 +4,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { uploadsDir } from '../../db.js';
 import { getMediaDuration } from './durationDetector.js';
+import { cadenceTargetDuration, validateSpeechCadence } from '../speechCadence.js';
 
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
@@ -35,7 +36,7 @@ export async function hasAudioStream(filePath) {
   });
 }
 
-function runFfmpeg(args, timeoutMs = RENDER_TIMEOUT_MS) {
+export function runFfmpeg(args, timeoutMs = RENDER_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     let processHandle;
     let stderr = '';
@@ -107,7 +108,7 @@ function safeOutputName(value, fallback) {
 async function renderSpeechPass({ segments, sourceDuration, outputPath, timeoutMs }) {
   const inputArgs = segments.flatMap((segment) => ['-i', segment.filePath]);
   const filters = segments.map((segment, index) => {
-    const targetDuration = Math.max(0.1, segment.endTime - segment.startTime);
+    const targetDuration = segment.cadenceDuration;
     const tempoFactor = segment.audioDuration / targetDuration;
     const delayMs = Math.max(0, Math.round(segment.startTime * 1000));
     return `[${index}:a]aresample=48000,${buildAtempoChain(tempoFactor)},adelay=${delayMs}:all=1,apad,atrim=0:${sourceDuration.toFixed(3)}[seg${index}]`;
@@ -179,7 +180,11 @@ export async function renderDubbedMedia({
   projectTitle,
   renderVideo = true,
   enableDucking = true,
+  speechCadence = 'natural',
+  qualityMode = 'standard',
+  backgroundFilePath = null,
 } = {}) {
+  validateSpeechCadence(speechCadence);
   if (!sourceFilePath || !fs.existsSync(sourceFilePath)) {
     throw new Error('Source media is missing for dubbed media rendering.');
   }
@@ -187,6 +192,9 @@ export async function renderDubbedMedia({
     throw new Error('No synthesized segment audio is available for rendering.');
   }
 
+  if (qualityMode === 'cinema' && (!backgroundFilePath || !fs.existsSync(backgroundFilePath))) {
+    throw new Error('Cinema requires the separated background track.');
+  }
   const usableSegments = [];
   for (const segment of segmentAudioFiles) {
     if (!segment?.filePath || !fs.existsSync(segment.filePath)) continue;
@@ -204,6 +212,18 @@ export async function renderDubbedMedia({
   const sourceDuration = Number.isFinite(totalDuration) && totalDuration > 0
     ? totalDuration
     : await getMediaDuration(sourceFilePath);
+  for (const segment of usableSegments) {
+    segment.cadenceDuration = cadenceTargetDuration(segment, usableSegments, sourceDuration, speechCadence);
+    if (qualityMode === 'cinema') {
+      const window = Math.min(segment.endTime, sourceDuration) - segment.startTime;
+      segment.cadenceDuration = Math.min(segment.cadenceDuration, window);
+      if (window <= 0 || segment.audioDuration / segment.cadenceDuration > 1.45 + 0.001) {
+        throw new Error('Cinema speech does not fit its time window. Shorten the translation.');
+      }
+      // Short utterances retain natural pauses; never stretch into another speaker.
+      segment.cadenceDuration = Math.min(segment.cadenceDuration, segment.audioDuration / 0.7);
+    }
+  }
   const outputId = randomUUID().slice(0, 12);
   const baseName = safeOutputName(projectTitle, 'dubbed-project');
   const isolatedSpeechFilename = `${baseName}-speech-${outputId}.m4a`;
@@ -225,7 +245,11 @@ export async function renderDubbedMedia({
 
     // 2. Determine if the source has audio that should be ducked and preserved
     const sourceHasAudio = await hasAudioStream(sourceFilePath);
-    if (sourceHasAudio && enableDucking) {
+    if (qualityMode === 'cinema') {
+      await runFfmpeg(['-y', '-i', backgroundFilePath, '-i', isolatedSpeechPath,
+        '-filter_complex', `[0:a]aresample=48000[bg];[bg][1:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95,apad,atrim=0:${sourceDuration.toFixed(3)}[final]`,
+        '-map', '[final]', '-c:a', 'aac', '-b:a', '192k', audioFilePath]);
+    } else if (sourceHasAudio && enableDucking) {
       try {
         // Professional sidechain audio ducking:
         // Duck the background music/SFX during speech intervals, restore between phrases

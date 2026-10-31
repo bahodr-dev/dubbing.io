@@ -1,3 +1,4 @@
+import { cinemaCapabilities } from '../services/cinema.js';
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
@@ -187,7 +188,9 @@ mediaRouter.post('/upload', authenticateToken, uploadSingleFile, async (req, res
         removeUploadedFile(req.file);
         return res.status(422).json({ error: 'The uploaded file is corrupt, has no playable media, or its duration cannot be read.', code: 'MEDIA_DURATION_INVALID' });
       }
-      const maxDuration = Number.parseInt(process.env.MAX_MEDIA_DURATION_SECONDS || '900', 10);
+      const maxDuration = cinemaCapabilities(req.user.id).enabled
+        ? Number.parseInt(process.env.MAX_FILM_DURATION_SECONDS || '21600', 10)
+        : Number.parseInt(process.env.MAX_MEDIA_DURATION_SECONDS || '900', 10);
       if (serverDuration > maxDuration) {
         removeUploadedFile(req.file);
         return res.status(422).json({ error: `Media is longer than the ${Math.floor(maxDuration / 60)} minute beta limit.`, code: 'MEDIA_DURATION_EXCEEDED' });

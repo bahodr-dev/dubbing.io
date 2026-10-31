@@ -107,13 +107,13 @@ export function reconcileTerminalJobs() {
     SELECT usage.job_id, jobs.status, jobs.error
     FROM minute_usage AS usage
     JOIN dubbing_jobs AS jobs ON jobs.id = usage.job_id
-    WHERE usage.status = 'reserved' AND jobs.status IN ('completed', 'failed')
+    WHERE usage.status = 'reserved' AND jobs.status IN ('completed', 'partial', 'failed')
   `).all();
 
   let consumed = 0;
   let refunded = 0;
   for (const row of rows) {
-    if (row.status === 'completed' && consumeMinutesForJob(row.job_id)) consumed += 1;
+    if (['completed', 'partial'].includes(row.status) && consumeMinutesForJob(row.job_id)) consumed += 1;
     if (row.status === 'failed' && refundMinutesForJob(row.job_id, row.error)) refunded += 1;
   }
   return { consumed, refunded };

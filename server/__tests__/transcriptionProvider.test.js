@@ -114,6 +114,7 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
     expect(result.segments[0].start).toBe(0.0);
     expect(result.segments[0].end).toBe(4.2);
     expect(result.segments[1].text).toBe('This is automated transcription.');
+    expect(result.language).toBe('en');
   });
 
   it('uses diarized transcription and keeps speaker identities stable across turns', async () => {
@@ -137,8 +138,9 @@ describe('Transcription Provider Abstraction Unit Tests', () => {
       },
     });
 
-    const result = await provider.transcribe({ audioFilePath: dummyAudioPath, language: 'en' });
+    const result = await provider.transcribe({ audioFilePath: dummyAudioPath, language: 'auto' });
 
+    expect(requestBody.get('language')).toBeNull();
     expect(requestBody.get('model')).toBe('gpt-4o-transcribe-diarize');
     expect(requestBody.get('response_format')).toBe('diarized_json');
     expect(requestBody.get('chunking_strategy')).toBe('auto');

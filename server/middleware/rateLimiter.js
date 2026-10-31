@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
+  skip: req => req.method === 'GET' && /^\/(dubbing|films)\//.test(req.path),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -31,4 +32,22 @@ export const uploadLimiter = rateLimit({
   message: {
     error: 'Upload rate limit exceeded. Please wait a few minutes before uploading more files.',
   },
+});
+
+// Apply after authentication: shared studio NATs get independent user quotas.
+export const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  keyGenerator: req => req.user.id,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'AI request quota reached. Try again later.', code: 'AI_QUOTA_REACHED' },
+});
+export const pollingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  keyGenerator: req => req.user.id,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Polling too frequently. Wait before refreshing.' },
 });

@@ -1,7 +1,7 @@
-const PROJECT_STATUSES = new Set(['draft', 'processing', 'completed', 'failed', 'ready']);
+const PROJECT_STATUSES = new Set(['draft', 'processing', 'completed', 'failed', 'ready', 'paused', 'partial']);
 const MAX_TITLE_LENGTH = 160;
 const MAX_DESCRIPTION_LENGTH = 2_000;
-const MAX_SEGMENTS = 1_500;
+const MAX_SEGMENTS = 10_000;
 const MAX_SEGMENT_TEXT_LENGTH = 10_000;
 const MAX_DURATION_SECONDS = 24 * 60 * 60;
 const MAX_PAGE_SIZE = 100;
@@ -62,6 +62,8 @@ export function validateTranscript(transcript) {
     if (segment.translationEdited !== undefined && typeof segment.translationEdited !== 'boolean') {
       errors.push(`${field}.translationEdited must be a boolean.`);
     }
+    if (segment.expression !== undefined && !['neutral', 'whisper', 'shout', 'sad', 'happy'].includes(segment.expression)) errors.push(`${field}.expression is invalid.`);
+    if (segment.expressionEdited !== undefined && typeof segment.expressionEdited !== 'boolean') errors.push(`${field}.expressionEdited must be a boolean.`);
     addStringError(errors, segment.speaker, `${field}.speaker`, { maxLength: 160 });
 
     if (typeof segment.startTime !== 'number' || !Number.isFinite(segment.startTime) || segment.startTime < 0 || segment.startTime > MAX_DURATION_SECONDS) {

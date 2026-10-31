@@ -67,4 +67,23 @@ describe('Dubbing minute preflight', () => {
       .set('Cookie', otherCookie).send({ mediaId });
     expect(response.status).toBe(404);
   });
+
+  it('rejects missing and invalid cadence before charging or starting dubbing', async () => {
+    const balance = db.prepare('SELECT minutes_balance FROM users WHERE id = ?').get(ownerId).minutes_balance;
+    for (const speechCadence of [undefined, '', 'unknown']) {
+      const response = await request(app).post('/api/dubbing/process')
+        .set('Cookie', ownerCookie).send({ mediaId, speechCadence });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('SPEECH_CADENCE_REQUIRED');
+    }
+    expect(db.prepare('SELECT minutes_balance FROM users WHERE id = ?').get(ownerId).minutes_balance).toBe(balance);
+  });
+
+  it('checks cloning against 1.5 times the automatic voice cost', async () => {
+    const automatic = await request(app).post('/api/dubbing/check-minutes')
+      .set('Cookie', ownerCookie).send({ mediaId });
+    const cloning = await request(app).post('/api/dubbing/check-minutes')
+      .set('Cookie', ownerCookie).send({ mediaId, autoCloneVoices: true });
+    expect(cloning.body.requiredMinutes).toBeCloseTo(automatic.body.requiredMinutes * 1.5, 5);
+  });
 });

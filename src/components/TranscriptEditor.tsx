@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { TranscriptSegment } from '../types';
+import type { TranscriptSegment, Expression } from '../types';
 import { Check, Edit3, Volume2, X, Search } from 'lucide-react';
 import { playVoiceSample, stopVoiceSample } from '../audio/audioSynth';
 
@@ -11,6 +11,8 @@ interface TranscriptEditorProps {
   originalLanguage: string;
   currentPlayTime?: number;
   saveStatus?: 'saved' | 'saving' | 'error';
+  onChangeMetadata?: (id: string, patch: Partial<TranscriptSegment>) => void;
+  onRegenerate?: (id: string) => void;
   onRetryTranscription?: () => void | Promise<void>;
 }
 
@@ -23,6 +25,8 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   currentPlayTime,
   saveStatus = 'saved',
   onRetryTranscription,
+  onChangeMetadata,
+  onRegenerate,
 }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'translated' | 'original'>('both');
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
@@ -334,6 +338,16 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                 </div>
               </div>
 
+              {onChangeMetadata && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <label>Speaker <input aria-label={`Speaker for ${seg.id}`} disabled={saveStatus === 'saving'} defaultValue={seg.speaker || ''} onBlur={e => { if (e.target.value !== seg.speaker) onChangeMetadata(seg.id, { speaker: e.target.value }); }} /></label>
+                <label>Expression <select aria-label={`Expression for ${seg.id}`} disabled={saveStatus === 'saving'} value={seg.expression || 'neutral'} onChange={e => onChangeMetadata(seg.id, { expression: e.target.value as Expression, expressionEdited: true })}>
+                  {['neutral', 'whisper', 'shout', 'sad', 'happy'].map(value => <option key={value}>{value}</option>)}
+                </select></label>
+                {onRegenerate && <button type="button" className="btn btn-secondary btn-sm" disabled={saveStatus !== 'saved'} onClick={() => onRegenerate(seg.id)}>Regenerate segment</button>}
+                {seg.qualityWarnings?.length ? <p role="status">Review: {seg.qualityWarnings.join(', ')}</p> : null}
+                {seg.regenerationStatus === 'pending' && <p>Audio needs regeneration.</p>}
+                {seg.regenerationStatus === 'needs_edit' && <p>Shorten this translation before regenerating.</p>}
+              </div>}
               {/* Segment Content */}
               {isEditing ? (
                 <div className="transcript-segment-content" style={{ display: 'grid', gridTemplateColumns: activeTab === 'both' ? '1fr 1fr' : '1fr', gap: '12px' }}>

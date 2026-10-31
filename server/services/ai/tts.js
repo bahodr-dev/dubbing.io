@@ -1,3 +1,5 @@
+import { textProvider } from './textProvider.js';
+const ttsProvider = () => process.env.TTS_PROVIDER || (textProvider().provider === 'deepseek' ? 'elevenlabs' : 'auto');
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -19,7 +21,7 @@ export const VOICE_PROVIDER_MAP = {
 import { createMediaAsset } from '../../repositories/mediaRepository.js';
 
 export function hasConfiguredTtsProvider() {
-  return Boolean(process.env.ELEVENLABS_API_KEY || process.env.OPENAI_API_KEY);
+  return Boolean(process.env.ELEVENLABS_API_KEY || (ttsProvider() !== 'elevenlabs' && process.env.OPENAI_API_KEY));
 }
 
 export function getRenderableVoiceIds() {
@@ -37,9 +39,16 @@ export async function synthesizeSpeech({
   speed = 1.0,
   userId = null,
   registerAsset = true,
+  qualityMode = 'standard',
+  expression = 'neutral',
+  languageCode = 'uz',
 } = {}) {
+  const cinema = qualityMode === 'cinema';
+  if (cinema && !process.env.ELEVENLABS_API_KEY) throw new Error('Cinema requires ElevenLabs.');
+  const tags = { neutral: '', whisper: '[whispers]', shout: '[shouts]', sad: '[sad]', happy: '[happy]' };
+  if (cinema && !Object.hasOwn(tags, expression)) throw new Error('Unsupported expression.');
   const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const openaiKey = ttsProvider() === 'elevenlabs' ? null : process.env.OPENAI_API_KEY;
   if (elevenLabsVoiceId && (!elevenLabsKey || !/^[a-zA-Z0-9_-]+$/.test(elevenLabsVoiceId))) {
     throw new Error('A valid ElevenLabs voice and API key are required for cloned speech.');
   }
@@ -80,9 +89,11 @@ export async function synthesizeSpeech({
           'Content-Type': 'application/json',
           'xi-api-key': elevenLabsKey,
         },
+        signal: AbortSignal.timeout(120_000),
         body: JSON.stringify({
-          text,
-          model_id: 'eleven_multilingual_v2',
+          text: cinema ? `${tags[expression]} ${text}`.trim() : text,
+          model_id: cinema ? 'eleven_v3' : 'eleven_multilingual_v2',
+          ...(cinema ? { language_code: languageCode } : {}),
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
@@ -102,12 +113,12 @@ export async function synthesizeSpeech({
           filePath: outFilePath,
           storedFilename: outFileName,
           durationEstimate: Math.max(2, text.split(' ').length * 0.4),
-          provider: 'ElevenLabs Neural Multilingual v2',
+          provider: cinema ? 'ElevenLabs v3' : 'ElevenLabs Neural Multilingual v2',
         };
       }
-      if (elevenLabsVoiceId) throw new Error(`Cloned voice synthesis failed (${response.status}).`);
+      if (elevenLabsVoiceId || cinema || ttsProvider() === 'elevenlabs') throw new Error(`${cinema ? 'Cinema' : 'Cloned voice'} synthesis failed (${response.status}).`);
     } catch (err) {
-      if (elevenLabsVoiceId) throw err;
+      if (elevenLabsVoiceId || cinema || ttsProvider() === 'elevenlabs') throw err;
       console.warn('[ElevenLabs API] Error:', err);
     }
   }

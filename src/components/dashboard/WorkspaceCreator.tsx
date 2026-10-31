@@ -1,6 +1,9 @@
+import { QualityModeField } from '../QualityModeField';
 import React, { useState, useRef, useEffect } from 'react';
-import type { Project, Voice } from '../../types';
+import type { NewDubOptions, Project, SpeechCadence, Voice, VoiceMode } from '../../types';
+import { SPEECH_CADENCE_OPTIONS } from '../../data/speechCadences';
 import { api } from '../../services/api';
+import { WorkspaceSelect } from './WorkspaceSelect';
 import { checkMinutesBeforeUpload, checkUploadedMediaMinutes } from '../../utils/dubbingMinutes';
 import {
   AlertCircle,
@@ -16,7 +19,7 @@ import {
 
 interface WorkspaceCreatorProps {
   voices: Voice[];
-  onProjectCreated: (project: Project) => void | Promise<void>;
+  onProjectCreated: (project: Project, options: NewDubOptions) => void | Promise<void>;
   onShowToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -33,7 +36,10 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
   const [targetLanguage, setTargetLanguage] = useState('uz');
   const [selectedVoiceId, setSelectedVoiceId] = useState('voice-farrux');
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
+  const [sourceLanguage, setSourceLanguage] = useState('en');
+  const [qualityMode, setQualityMode] = useState<'standard' | 'cinema'>('standard');
+  const [speechCadence, setSpeechCadence] = useState<SpeechCadence | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -97,7 +103,15 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
 
   const handleSubmit = async () => {
     if (!uploadedFileName && !videoUrl) {
-      setSourceError('Choose a file or paste a direct media file URL before starting.');
+      setSourceError('Avval fayl tanlang yoki video havolasini kiriting.');
+      return;
+    }
+    if (!voiceMode) {
+      setSourceError('Voice bo‘limidan Automatic yoki Voice cloning variantidan birini tanlang.');
+      return;
+    }
+    if (!speechCadence) {
+      setSourceError('Choose a Speech Cadence before starting dubbing.');
       return;
     }
 
@@ -111,7 +125,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
     let projectCreated = false;
 
     try {
-      await checkMinutesBeforeUpload(uploadedFile);
+      await checkMinutesBeforeUpload(uploadedFile, voiceMode === 'clone', qualityMode);
       let finalMediaUrl = '';
 
       // 1. If file was selected, upload directly to backend
@@ -131,12 +145,12 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
       }
 
       if (!uploadedMediaId) throw new Error('Media upload did not return an ID. Please try again.');
-      const duration = await checkUploadedMediaMinutes(uploadedMediaId);
+      const duration = await checkUploadedMediaMinutes(uploadedMediaId, voiceMode === 'clone', qualityMode);
 
       const newProj: Project = {
         id: `proj-${Date.now()}`,
         title: title,
-        originalLanguage: 'en',
+        originalLanguage: qualityMode === 'cinema' ? sourceLanguage : 'auto',
         targetLanguage: targetLanguage,
         status: 'draft',
         duration,
@@ -152,16 +166,8 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
 
       // Persist before queueing so the job can be restored after navigation or
       // a browser refresh. The transcription worker updates its real duration.
-      await onProjectCreated(newProj);
+      await onProjectCreated(newProj, { voiceMode, speechCadence, ...(qualityMode === 'cinema' ? { qualityMode } : {}) });
       projectCreated = true;
-      await api.dubbing.transcribe({
-        mediaId: uploadedMediaId,
-        projectId: newProj.id,
-        language: newProj.originalLanguage,
-      });
-      if (onShowToast) {
-        onShowToast('Project saved. Transcription is starting in the studio.', 'success');
-      }
     } catch (err: any) {
       if (uploadedMediaId && !projectCreated) {
         try { await api.media.delete(uploadedMediaId); } catch (cleanupError) {
@@ -460,9 +466,9 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
         </div>
       )}
 
-      {sourceError && (
+      {(sourceError || voiceMode || speechCadence) && (
         <div
-          role="alert"
+          role={sourceError ? 'alert' : 'status'}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -477,7 +483,13 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           }}
         >
           <AlertCircle size={15} />
-          <span>{sourceError}</span>
+          <span>{sourceError || <>
+            {voiceMode && (voiceMode === 'clone'
+            ? "Voice cloning recreates each speaker’s original voice in the translated dub. Uses 1.5× credits."
+            : 'Automatic detects speakers and assigns voices from our library to the translated dub.')}
+            {voiceMode && speechCadence && <br />}
+            {speechCadence && SPEECH_CADENCE_OPTIONS.find((option) => option.value === speechCadence)?.description}
+          </>}</span>
         </div>
       )}
 
@@ -559,10 +571,8 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
             )}
           </div>
 
-          {/* Advanced Settings Button */}
-          <button
-            type="button"
-            onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+          {/* Voice settings are always visible because a choice is required. */}
+          <span
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -570,16 +580,15 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               padding: '6px 12px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: isAdvancedOpen ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
+              backgroundColor: 'rgba(0, 0, 0, 0.06)',
               color: 'rgba(0, 0, 0, 0.7)',
               fontSize: 'var(--text-control)',
               fontWeight: 500,
-              cursor: 'pointer',
             }}
           >
             <SlidersHorizontal size={14} />
             <span>Advanced</span>
-          </button>
+          </span>
         </div>
 
         {/* Submit button */}
@@ -587,7 +596,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={(!uploadedFileName && !videoUrl) || isGenerating}
+            disabled={isGenerating}
             className="workspace-submit-button"
             aria-label={isGenerating ? 'Starting dubbing project' : 'Start dubbing project'}
             style={{
@@ -595,7 +604,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               height: '38px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: uploadedFileName || videoUrl ? '#000000' : 'rgba(0, 0, 0, 0.18)',
+              backgroundColor: '#000000',
               color: '#ffffff',
               display: 'flex',
               alignItems: 'center',
@@ -604,7 +613,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               padding: '0 14px',
               fontSize: 'var(--text-control)',
               fontWeight: 700,
-              cursor: (uploadedFileName || videoUrl) && !isGenerating ? 'pointer' : 'not-allowed',
+              cursor: !isGenerating ? 'pointer' : 'not-allowed',
               transition: 'all 140ms ease',
             }}
           >
@@ -615,8 +624,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
       </div>
 
       {/* Advanced Options Drawer */}
-      {isAdvancedOpen && (
-        <div
+      <div
           className="workspace-advanced-panel"
           style={{
             marginTop: '14px',
@@ -645,6 +653,7 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               placeholder="e.g. My Studio Dub"
+              className="workspace-project-title"
               style={{
                 width: '100%',
                 padding: '6px 10px',
@@ -654,66 +663,30 @@ export const WorkspaceCreator: React.FC<WorkspaceCreatorProps> = ({
               }}
             />
           </div>
-          <div>
-            <label
-              style={{
-                fontSize: 'var(--text-control)',
-                fontWeight: 600,
-                color: 'rgba(0, 0, 0, 0.6)',
-                display: 'block',
-                marginBottom: '4px',
-              }}
-            >
-              Voice Profile
-            </label>
-            <select
-              value={selectedVoiceId}
-              onChange={(e) => setSelectedVoiceId(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '6px 10px',
-                borderRadius: '6px',
-                border: '1px solid rgba(0, 0, 0, 0.12)',
-                fontSize: 'var(--text-input)',
-                backgroundColor: '#fff',
-              }}
-            >
-              {voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name} ({v.language} {v.gender})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label
-              style={{
-                fontSize: 'var(--text-control)',
-                fontWeight: 600,
-                color: 'rgba(0, 0, 0, 0.6)',
-                display: 'block',
-                marginBottom: '4px',
-              }}
-            >
-              Speech Cadence
-            </label>
-            <select
-              style={{
-                width: '100%',
-                padding: '6px 10px',
-                borderRadius: '6px',
-                border: '1px solid rgba(0, 0, 0, 0.12)',
-                fontSize: 'var(--text-input)',
-                backgroundColor: '#fff',
-              }}
-            >
-              <option>Dynamic Lip Sync (Natural)</option>
-              <option>Fast Cadence (Shorts/TikTok)</option>
-              <option>Narrative Pacing (Documentary)</option>
-            </select>
-          </div>
+          <WorkspaceSelect
+            id="workspace-voice-mode"
+            label="Voice"
+            value={voiceMode || ''}
+            placeholder="Select voice method"
+            disabled={isGenerating}
+            onChange={(value) => { setVoiceMode(value as VoiceMode); setSourceError(null); }}
+            options={[
+              { value: 'site', label: 'Automatic', description: 'Match site voices to each detected speaker' },
+              { value: 'clone', label: 'Voice cloning', description: 'Preserve original voices · 1.5× credits' },
+            ]}
+          />
+          <QualityModeField value={qualityMode} onChange={value => { setQualityMode(value); if (value === 'cinema') { setTargetLanguage('uz'); setVoiceMode('clone'); setSpeechCadence('natural'); } }} disabled={isGenerating} />
+          {qualityMode === 'cinema' && <label className="label">Manba tili<select className="input" aria-label="Film source language" value={sourceLanguage} disabled={isGenerating} onChange={e => setSourceLanguage(e.target.value)}><option value="en">English</option><option value="ru">Русский</option></select></label>}
+          <WorkspaceSelect
+            id="workspace-speech-cadence"
+            label="Speech Cadence"
+            value={speechCadence || ''}
+            placeholder="Select speech cadence"
+            disabled={isGenerating}
+            onChange={(value) => { setSpeechCadence(value as SpeechCadence); setSourceError(null); }}
+            options={SPEECH_CADENCE_OPTIONS}
+          />
         </div>
-      )}
     </div>
   );
 };

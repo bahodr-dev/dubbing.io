@@ -41,7 +41,7 @@ export function findActiveDubbingJobByProjectAndUser(projectId, userId) {
   return db.prepare(`
     SELECT * FROM dubbing_jobs
     WHERE project_id = ? AND user_id = ?
-      AND status IN ('queued', 'transcribing', 'translating', 'synthesizing', 'rendering')
+      AND status IN ('queued', 'transcribing', 'translating', 'synthesizing', 'rendering', 'paused')
     ORDER BY created_at DESC, rowid DESC
     LIMIT 1
   `).get(projectId, userId);
@@ -52,7 +52,7 @@ export function findActiveDubbingJobByMediaAndUser(mediaId, userId) {
   return db.prepare(`
     SELECT * FROM dubbing_jobs
     WHERE media_id = ? AND user_id = ?
-      AND status IN ('queued', 'transcribing', 'translating', 'synthesizing', 'rendering')
+      AND status IN ('queued', 'transcribing', 'translating', 'synthesizing', 'rendering', 'paused')
     ORDER BY created_at DESC, rowid DESC
     LIMIT 1
   `).get(mediaId, userId);
@@ -204,10 +204,16 @@ export function formatDubbingJob(job) {
     canRetry: job.status === 'failed' && job.attempt < job.max_attempts,
     targetLanguage: params.targetLanguage || 'uz',
     voiceId: params.voiceId || 'voice-farrux',
+    autoCloneVoices: params.autoCloneVoices === true,
+    autoAssignSiteVoices: params.autoAssignSiteVoices === true,
+    speechCadence: params.speechCadence || 'natural',
+    qualityMode: params.qualityMode || 'standard',
+    glossary: params.glossary || {},
+    filmMode: params.filmMode === true,
     duration: params.duration ?? null,
     result,
     startedAt: job.last_heartbeat_at ? new Date(job.last_heartbeat_at).toISOString() : job.created_at,
-    completedAt: ['completed', 'failed'].includes(job.status) ? job.updated_at : null,
+    completedAt: ['completed', 'partial', 'failed'].includes(job.status) ? job.updated_at : null,
     failureCode: job.status === 'failed' ? 'DUBBING_PIPELINE_FAILED' : null,
     createdAt: job.created_at,
     updatedAt: job.updated_at,

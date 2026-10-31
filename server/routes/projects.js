@@ -1,3 +1,4 @@
+import { deleteInstantVoiceClone } from '../services/ai/voiceCloning.js';
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { db } from '../db.js';
@@ -21,6 +22,9 @@ function formatProject(p) {
   const dubbedAudioUrl = p.output_audio_media_id ? `/api/media/${p.output_audio_media_id}` : '';
   return {
     id: p.id,
+    qualityMode: p.quality_mode || 'standard',
+    editRevision: p.edit_revision || 0,
+    ...(p.cinema_stems_json ? JSON.parse(p.cinema_stems_json) : {}),
     title: p.title,
     description: p.description || '',
     sourceUrl: sourceMediaUrl,
@@ -45,6 +49,16 @@ function formatProject(p) {
     updatedAt: p.updated_at,
     createdAt: p.created_at,
   };
+}
+
+function markEditedTranslations(segments, existing) {
+  if (!segments) return segments;
+  const previous = JSON.parse(existing.segments_json || '[]');
+  return segments.map(segment => {
+    const old = previous.find(s => s.id === segment.id);
+    const audioChanged = old && ['originalText', 'translatedText', 'speaker', 'expression', 'startTime', 'endTime'].some(key => old[key] !== segment[key]);
+    return { ...segment, ...(existing.quality_mode === 'cinema' && audioChanged ? { regenerationStatus: 'pending' } : {}), ...(old && (old.translationEdited === true || segment.translatedText !== old.translatedText) ? { translationEdited: true } : {}) };
+  });
 }
 
 // 1. GET PROJECTS FOR LOGGED-IN USER (server-side pagination, search, and status filtering)
@@ -97,6 +111,11 @@ projectsRouter.get('/', (req, res) => {
 });
 
 // 2. CREATE PROJECT
+projectsRouter.get('/:id', (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  return project ? res.json({ project: formatProject(project) }) : res.status(404).json({ error: 'Project not found.' });
+});
+
 projectsRouter.post('/', (req, res) => {
   try {
     const validation = validateProjectPayload(req.body);
@@ -107,7 +126,7 @@ projectsRouter.post('/', (req, res) => {
     const { 
       id, title, description, sourceUrl, videoUrl, thumbnailUrl, 
       originalLanguage, targetLanguage, voiceId, speakerVoices, status, duration,
-      fileSize, videoQuality, transcript, segments, mediaId
+      fileSize, videoQuality, transcript, segments, mediaId, qualityMode
     } = req.body;
 
     const projectId = id || `proj-${randomUUID().slice(0, 8)}`;
@@ -134,8 +153,8 @@ projectsRouter.post('/', (req, res) => {
       INSERT INTO projects (
         id, user_id, title, description, source_url, thumbnail_url, 
         original_language, target_language, voice_id, speaker_voices_json, source_media_id, status, duration,
-        file_size, video_quality, segments_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        file_size, video_quality, segments_json, quality_mode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       projectId,
       req.user.id,
@@ -152,7 +171,8 @@ projectsRouter.post('/', (req, res) => {
       duration || 30,
       fileSize || '12.4 MB',
       videoQuality || '1080p',
-      JSON.stringify(transcriptData)
+      JSON.stringify(transcriptData),
+      qualityMode === 'cinema' ? 'cinema' : 'standard'
     );
 
     if (inferredMediaId) {
@@ -199,7 +219,7 @@ projectsRouter.put('/:id', (req, res) => {
     const updatedOriginalLanguage = originalLanguage !== undefined ? originalLanguage : existing.original_language;
     const updatedTargetLanguage = targetLanguage !== undefined ? targetLanguage : existing.target_language;
     const updatedSpeakerVoices = speakerVoices !== undefined ? JSON.stringify(speakerVoices) : existing.speaker_voices_json;
-    const transcriptToSave = transcript !== undefined ? transcript : (segments !== undefined ? segments : null);
+    const transcriptToSave = markEditedTranslations(transcript !== undefined ? transcript : (segments !== undefined ? segments : null), existing);
     const updatedSegments = transcriptToSave !== null ? JSON.stringify(transcriptToSave) : existing.segments_json;
     const requestedMediaUrl = videoUrl || sourceUrl;
     const inferredMediaId = mediaId !== undefined
@@ -213,15 +233,18 @@ projectsRouter.put('/:id', (req, res) => {
       if (!ownedMedia) return res.status(404).json({ error: 'Source media not found or unauthorized.' });
     }
 
+    const revisionChanged = updatedVoiceId !== existing.voice_id || updatedOriginalLanguage !== existing.original_language ||
+      updatedTargetLanguage !== existing.target_language || updatedSpeakerVoices !== existing.speaker_voices_json ||
+      updatedSegments !== existing.segments_json || updatedMediaId !== existing.source_media_id;
     db.prepare(`
       UPDATE projects 
       SET title = ?, description = ?, status = ?, duration = ?, voice_id = ?,
           original_language = ?, target_language = ?, speaker_voices_json = ?, segments_json = ?,
-          source_url = ?, source_media_id = ?, updated_at = CURRENT_TIMESTAMP
+          source_url = ?, source_media_id = ?, edit_revision = edit_revision + ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND user_id = ?
     `).run(updatedTitle, updatedDesc, updatedStatus, updatedDuration, updatedVoiceId,
       updatedOriginalLanguage, updatedTargetLanguage, updatedSpeakerVoices, updatedSegments,
-      updatedSourceUrl, updatedMediaId || null, id, req.user.id);
+      updatedSourceUrl, updatedMediaId || null, revisionChanged ? 1 : 0, id, req.user.id);
 
     if (updatedMediaId) {
       db.prepare('UPDATE media_assets SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?')
@@ -256,11 +279,12 @@ projectsRouter.put('/:id/transcript', (req, res) => {
       return res.status(404).json({ error: 'Project not found.' });
     }
 
+    const savedTranscript = JSON.stringify(markEditedTranslations(transcript, existing));
     db.prepare(`
       UPDATE projects 
-      SET segments_json = ?, updated_at = CURRENT_TIMESTAMP
+      SET segments_json = ?, edit_revision = edit_revision + ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND user_id = ?
-    `).run(JSON.stringify(transcript), id, req.user.id);
+    `).run(savedTranscript, savedTranscript !== existing.segments_json ? 1 : 0, id, req.user.id);
 
     return res.json({ message: 'Transcript synchronized successfully.' });
   } catch (err) {
@@ -286,8 +310,8 @@ projectsRouter.post('/:id/duplicate', (req, res) => {
       INSERT INTO projects (
         id, user_id, title, description, source_url, thumbnail_url, 
         original_language, target_language, voice_id, source_media_id, status, duration,
-        file_size, video_quality, segments_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        file_size, video_quality, segments_json, speaker_voices_json, quality_mode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       newId,
       req.user.id,
@@ -299,11 +323,13 @@ projectsRouter.post('/:id/duplicate', (req, res) => {
       original.target_language,
       original.voice_id,
       original.source_media_id,
-      original.status,
+      'ready',
       original.duration,
       original.file_size,
       original.video_quality,
-      original.segments_json
+      original.segments_json,
+      original.speaker_voices_json,
+      original.quality_mode
     );
 
     const created = db.prepare('SELECT * FROM projects WHERE id = ?').get(newId);
@@ -324,7 +350,7 @@ projectsRouter.delete('/:id', async (req, res) => {
     const { id } = req.params;
     const activeJob = db.prepare(`
       SELECT id FROM dubbing_jobs
-      WHERE project_id = ? AND user_id = ? AND status NOT IN ('completed', 'failed')
+      WHERE project_id = ? AND user_id = ? AND status NOT IN ('completed', 'partial', 'failed')
       LIMIT 1
     `).get(id, req.user.id);
     if (activeJob) return res.status(409).json({ error: 'Wait for the active dubbing job to finish before deleting this project.' });
@@ -334,7 +360,14 @@ projectsRouter.delete('/:id', async (req, res) => {
       const failures = await cleanupJobVoiceClones(cloneJob.job_id);
       if (failures.length) return res.status(503).json({ error: 'Could not remove cloned voices yet. Try deleting the project again.' });
     }
-    db.prepare('DELETE FROM projects WHERE id = ? AND user_id = ?').run(id, req.user.id);
+    const filmClones = db.prepare('SELECT id, provider_voice_id FROM film_characters WHERE project_id = ? AND user_id = ? AND series_id IS NULL').all(id, req.user.id);
+    for (const clone of filmClones) {
+      if (clone.provider_voice_id) await deleteInstantVoiceClone(clone.provider_voice_id);
+    }
+    db.transaction(() => {
+      db.prepare('DELETE FROM film_characters WHERE project_id = ? AND user_id = ? AND series_id IS NULL').run(id, req.user.id);
+      db.prepare('DELETE FROM projects WHERE id = ? AND user_id = ?').run(id, req.user.id);
+    }).immediate();
     return res.json({ message: 'Project deleted successfully.' });
   } catch (err) {
     console.error('Error deleting project:', err);

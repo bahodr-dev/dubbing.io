@@ -186,6 +186,80 @@ export const MIGRATIONS = [
       db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_click_prepare_id ON click_transactions (prepare_id)');
     },
   },
+  {
+    id: '012_cinema_quality',
+    up(db) {
+      addMissingColumns(db, 'projects', [
+        { name: 'quality_mode', type: "TEXT NOT NULL DEFAULT 'standard'" },
+        { name: 'edit_revision', type: 'INTEGER NOT NULL DEFAULT 0' },
+        { name: 'cinema_stems_json', type: 'TEXT' },
+        { name: 'cinema_render_json', type: 'TEXT' },
+      ]);
+      db.exec(`CREATE TABLE IF NOT EXISTS cinema_artifacts (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        cache_key TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        state TEXT NOT NULL,
+        input_json TEXT NOT NULL,
+        output_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(project_id, cache_key)
+      )`);
+    },
+  },
+  {
+    id: '013_film_workflow',
+    up(db) {
+      db.exec(`
+        CREATE TABLE film_series (
+          id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title TEXT NOT NULL, glossary_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE TABLE film_episodes (
+          project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+          series_id TEXT REFERENCES film_series(id), episode TEXT,
+          glossary_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE TABLE film_characters (
+          id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          series_id TEXT REFERENCES film_series(id), project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+          name TEXT NOT NULL, provider_voice_id TEXT, clone_state TEXT NOT NULL DEFAULT 'missing'
+        );
+        CREATE TABLE film_chunks (
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          media_id TEXT NOT NULL, chunk_index INTEGER NOT NULL,
+          start_time REAL NOT NULL, end_time REAL NOT NULL,
+          state TEXT NOT NULL DEFAULT 'pending', stage TEXT, output_json TEXT, error TEXT,
+          PRIMARY KEY(project_id, media_id, chunk_index)
+        );
+        CREATE TABLE film_speakers (
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          media_id TEXT NOT NULL, chunk_index INTEGER NOT NULL, speaker TEXT NOT NULL,
+          character_id TEXT NOT NULL REFERENCES film_characters(id) ON DELETE CASCADE, confirmed INTEGER NOT NULL DEFAULT 0, confidence REAL, match_source TEXT,
+          PRIMARY KEY(project_id, media_id, chunk_index, speaker)
+        );
+        CREATE TABLE film_samples (
+          id TEXT PRIMARY KEY, character_id TEXT NOT NULL REFERENCES film_characters(id) ON DELETE CASCADE,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          media_id TEXT NOT NULL, chunk_index INTEGER NOT NULL, file_path TEXT NOT NULL, seconds REAL NOT NULL,
+          UNIQUE(character_id, project_id, media_id, chunk_index)
+        );
+        CREATE TABLE film_budgets (
+          job_id TEXT PRIMARY KEY REFERENCES dubbing_jobs(id) ON DELETE CASCADE,
+          limit_micros INTEGER NOT NULL CHECK(limit_micros > 0),
+          reserved_micros INTEGER NOT NULL DEFAULT 0, rates_json TEXT NOT NULL
+        );
+        CREATE TABLE film_requests (
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          request_key TEXT NOT NULL, job_id TEXT NOT NULL REFERENCES dubbing_jobs(id),
+          stage TEXT NOT NULL, amount_micros INTEGER NOT NULL, state TEXT NOT NULL,
+          output_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(project_id, request_key)
+        );
+        CREATE TABLE film_settings (id INTEGER PRIMARY KEY CHECK(id = 1), config_json TEXT NOT NULL);
+      `);
+    },
+  },
 ];
 
 export function getPendingMigrations(db) {

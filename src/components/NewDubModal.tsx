@@ -1,6 +1,8 @@
+import { QualityModeField } from './QualityModeField';
 import React, { useState, useRef } from 'react';
 import { useDialogFocus } from '../hooks/useDialogFocus';
-import type { Project } from '../types';
+import type { NewDubOptions, Project, VoiceMode, SpeechCadence } from '../types';
+import { SpeechCadenceField } from './SpeechCadenceField';
 import { UploadCloud, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import { checkMinutesBeforeUpload, checkUploadedMediaMinutes } from '../utils/dubbingMinutes';
@@ -8,7 +10,7 @@ import { checkMinutesBeforeUpload, checkUploadedMediaMinutes } from '../utils/du
 interface NewDubModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (project: Project) => void | Promise<void>;
+  onCreateProject: (project: Project, options: NewDubOptions) => void | Promise<void>;
 }
 
 export const NewDubModal: React.FC<NewDubModalProps> = ({
@@ -20,6 +22,10 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [projectName, setProjectName] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('uz');
+  const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
+  const [sourceLanguage, setSourceLanguage] = useState('en');
+  const [qualityMode, setQualityMode] = useState<'standard' | 'cinema'>('standard');
+  const [speechCadence, setSpeechCadence] = useState<SpeechCadence | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -39,13 +45,15 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting || !projectName.trim() || (!videoUrl.trim() && !selectedFile)) return;
+    if (!voiceMode) { setErrorMessage('Choose how voices should be generated.'); return; }
+    if (!speechCadence) { setErrorMessage('Choose a Speech Cadence before starting dubbing.'); return; }
     setErrorMessage('');
     setIsSubmitting(true);
     let mediaId: string | undefined;
     let projectCreated = false;
 
     try {
-      await checkMinutesBeforeUpload(selectedFile);
+      await checkMinutesBeforeUpload(selectedFile, voiceMode === 'clone', qualityMode);
       let finalMediaUrl = videoUrl;
 
       // 1. Upload to backend if file exists
@@ -70,7 +78,7 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
       }
 
       if (!mediaId) throw new Error('Media upload did not return an ID. Please try again.');
-      const duration = await checkUploadedMediaMinutes(mediaId);
+      const duration = await checkUploadedMediaMinutes(mediaId, voiceMode === 'clone', qualityMode);
 
       // 2. Imported media is transcribed asynchronously after the project exists,
       // allowing the persisted job to be restored by project id after refresh.
@@ -79,7 +87,7 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
       const newProj: Project = {
         id: `proj-${Date.now()}`,
         title: projectName || 'New Project Dub',
-        originalLanguage: 'en',
+        originalLanguage: qualityMode === 'cinema' ? sourceLanguage : 'auto',
         targetLanguage,
         status: 'draft',
         duration,
@@ -92,20 +100,8 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
         transcript,
       };
 
-      await onCreateProject(newProj);
+      await onCreateProject(newProj, { voiceMode, speechCadence, ...(qualityMode === 'cinema' ? { qualityMode } : {}) });
       projectCreated = true;
-
-      if (mediaId) {
-        try {
-          await api.dubbing.transcribe({
-            mediaId,
-            projectId: newProj.id,
-            language: 'en',
-          });
-        } catch (err) {
-          console.warn('Could not queue project transcription:', err);
-        }
-      }
       onClose();
     } catch (error) {
       if (mediaId && !projectCreated) {
@@ -266,6 +262,15 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
                 </select>
               </div>
             </div>
+            <fieldset style={{ border: 0, padding: '12px 0' }}>
+              <legend className="label">Advanced · dubbing voice (required)</legend>
+              <label style={{ display: 'block', marginBottom: 8 }}><input type="radio" name="new-dub-voice-mode" checked={voiceMode === 'site'} onChange={() => setVoiceMode('site')} /> Use site voices for detected speakers</label>
+              <label style={{ display: 'block', marginBottom: 8 }}><input type="radio" name="new-dub-voice-mode" checked={voiceMode === 'clone'} onChange={() => setVoiceMode('clone')} /> Clone each detected speaker's voice</label>
+              {voiceMode === 'clone' && <p role="status">Voice cloning tanlansa, kreditlaringiz 1,5 barobar ko‘p sarflanadi.</p>}
+            </fieldset>
+            <QualityModeField value={qualityMode} onChange={value => { setQualityMode(value); if (value === 'cinema') { setTargetLanguage('uz'); setVoiceMode('clone'); setSpeechCadence('natural'); } }} />
+            {qualityMode === 'cinema' && <label className="label">Manba tili<select className="input" aria-label="Film source language" value={sourceLanguage} onChange={e => setSourceLanguage(e.target.value)}><option value="en">English</option><option value="ru">Русский</option></select></label>}
+            <SpeechCadenceField value={speechCadence} onChange={setSpeechCadence} disabled={isSubmitting} />
           </div>
 
           {errorMessage && <p role="alert" style={{ padding: '0 24px 16px', color: 'var(--black-80)' }}>{errorMessage}</p>}
@@ -281,16 +286,16 @@ export const NewDubModal: React.FC<NewDubModalProps> = ({
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!projectName.trim() || (!videoUrl.trim() && !selectedFile) || isSubmitting}
+              disabled={!projectName.trim() || (!videoUrl.trim() && !selectedFile) || !voiceMode || !speechCadence || isSubmitting}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 size={15} className="animate-spin" />
-                  Entering Studio...
+                  Starting dubbing...
                 </>
               ) : (
-                'Enter Studio'
+                'Start dubbing'
               )}
             </button>
           </div>

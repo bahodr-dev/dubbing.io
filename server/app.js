@@ -1,4 +1,5 @@
 import express from 'express';
+import { filmsRouter } from './routes/films.js';
 import * as Sentry from '@sentry/node';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -14,6 +15,9 @@ import { apiLimiter, authLimiter, uploadLimiter } from './middleware/rateLimiter
 import { apiErrorHandler, apiNotFound, normalizeApiErrors } from './middleware/apiErrorHandler.js';
 
 export const app = express();
+// Configure only the known reverse-proxy hop count; never trust arbitrary forwarding headers.
+const proxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+if (Number.isSafeInteger(proxyHops) && proxyHops > 0 && proxyHops <= 5) app.set('trust proxy', proxyHops);
 
 // Initialize Database
 initDatabase();
@@ -42,8 +46,8 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
-app.use(express.json({ limit: '100mb', type: ['application/json', 'text/json', 'application/*+json'] }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use(express.json({ limit: '2mb', type: ['application/json', 'text/json', 'application/*+json'] }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // Apply General Rate Limiter to all /api routes in production
 if (process.env.NODE_ENV !== 'test') {
@@ -61,9 +65,10 @@ if (process.env.NODE_ENV !== 'test') {
 // API Routes
 app.use('/api/auth', process.env.NODE_ENV === 'test' ? authRouter : [authLimiter, authRouter]);
 app.use('/api/projects', projectsRouter);
-app.use('/api/media', process.env.NODE_ENV === 'test' ? mediaRouter : [uploadLimiter, mediaRouter]);
+app.use('/api/media', (req, res, next) => req.method === 'GET' || process.env.NODE_ENV === 'test' ? next() : uploadLimiter(req, res, next), mediaRouter);
 app.use('/api/voices', voicesRouter);
 app.use('/api/dubbing', dubbingRouter);
+app.use('/api/films', filmsRouter);
 app.use('/api/payments', paymentsRouter);
 
 // Health check endpoint

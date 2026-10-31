@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import type { ActiveTab, Project, ProjectLoadState } from './types';
+import type { ActiveTab, NewDubOptions, Project, ProjectLoadState } from './types';
 import { INITIAL_PROJECTS } from './data/sampleProjects';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -8,6 +8,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { api } from './services/api';
 import type { UserProfile } from './services/api';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { ProcessingPage } from './views/ProcessingPage';
 
 const LandingView = lazy(() => import('./views/LandingView').then((module) => ({ default: module.LandingView })));
 const DashboardView = lazy(() => import('./views/DashboardView').then((module) => ({ default: module.DashboardView })));
@@ -122,25 +123,51 @@ function AppContent() {
     else if (tab === 'pricing') navigate(userEmail ? '/dashboard/pricing' : '/pricing');
     else if (tab === 'signup') navigate('/signup');
     else if (tab === 'studio') {
-      const targetId = projects.length > 0 ? projects[0].id : 'new';
-      navigate(`/studio/${targetId}`);
+      const target = projects[0];
+      if (target) handleOpenProject(target);
+      else navigate('/dashboard');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleOpenProject = (proj: Project) => {
-    navigate(`/studio/${proj.id}`);
+    navigate(`/${proj.qualityMode !== 'cinema' && (proj.status === 'processing' || proj.status === 'failed') ? 'processing' : 'studio'}/${proj.id}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleCreateProject = async (newProj: Project) => {
+  const handleCreateProject = async (newProj: Project, options: NewDubOptions) => {
     try {
-      const { project: savedProject } = await api.projects.create(newProj);
+      const { project: savedProject } = await api.projects.create({ ...newProj, qualityMode: options.qualityMode || 'standard' });
       const project = savedProject || newProj;
       setProjects((prev) => [project, ...prev.filter((item) => item.id !== project.id)]);
-      navigate(`/studio/${project.id}`);
+      if (options.qualityMode === 'cinema') {
+        navigate(`/studio/${project.id}`);
+        return;
+      }
+      try {
+        const started = await api.dubbing.process({
+          projectId: project.id,
+          mediaId: project.mediaId,
+          originalLanguage: project.originalLanguage,
+          targetLanguage: project.targetLanguage,
+          voiceId: project.voiceId,
+          autoCloneVoices: options.voiceMode === 'clone',
+          autoAssignSiteVoices: options.voiceMode === 'site',
+          speechCadence: options.speechCadence,
+          ...(options.qualityMode ? { qualityMode: options.qualityMode } : {}),
+        });
+        setProjects((prev) => prev.map((item) => item.id === project.id ? { ...item, status: 'processing' } : item));
+        setUserProfile((current) => current ? { ...current, minutesBalance: started.minutesBalance } : current);
+        navigate(`/processing/${project.id}`, { state: { jobId: started.jobId, startOptions: options } });
+      } catch (startError) {
+        setProjects((prev) => prev.map((item) => item.id === project.id ? { ...item, status: 'failed' } : item));
+        try { await api.projects.update(project.id, { status: 'failed' }); } catch {}
+        navigate(`/processing/${project.id}`, { state: {
+          startError: startError instanceof Error ? startError.message : 'Could not start dubbing.',
+          startOptions: options,
+        } });
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      showSuccess('Project created and saved to database!');
     } catch (err: unknown) {
       const errorObj = err as Error;
       showError(errorObj.message || 'Could not save project to database');
@@ -370,10 +397,49 @@ function AppContent() {
 
           {/* Studio View (Protected, Dynamic Route by Project ID) */}
           <Route
+            path="/processing/:projectId"
+            element={
+              <ProtectedRoute isAuthenticated={!!userEmail} isLoading={isAuthLoading}>
+                <ProcessingPage
+                  key={location.pathname}
+                  project={projects.find((item) => item.id === location.pathname.split('/')[2])}
+                  isProjectLoading={projectLoadState === 'loading'}
+                  onStarted={(projectId) => {
+                    setProjects((prev) => prev.map((item) => item.id === projectId ? { ...item, status: 'processing' } : item));
+                  }}
+                  onOpenStudio={(project) => {
+                    setProjects((prev) => [project, ...prev.filter((item) => item.id !== project.id)]);
+                    navigate(`/studio/${project.id}`);
+                  }}
+                  onCompleted={async (projectId) => {
+                    let project: Project | null = null;
+                    for (let attempt = 0; attempt < 10; attempt += 1) {
+                      const response = await api.projects.get(projectId);
+                      if (response.project.status === 'completed') {
+                        project = response.project;
+                        break;
+                      }
+                      await new Promise((resolve) => window.setTimeout(resolve, 300));
+                    }
+                    if (!project) throw new Error('The video finished rendering, but the Studio project is still syncing. Try opening it again.');
+                    setProjects((prev) => [project, ...prev.filter((item) => item.id !== projectId)]);
+                    navigate(`/studio/${projectId}`, { replace: true });
+                  }}
+                  onMinutesBalanceChange={(minutesBalance) => {
+                    setUserProfile((current) => current ? { ...current, minutesBalance } : current);
+                  }}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/studio/:projectId"
             element={
               <ProtectedRoute isAuthenticated={!!userEmail} isLoading={isAuthLoading}>
-                <StudioView
+                {['processing', 'failed'].includes(projects.find((item) => item.id === location.pathname.split('/')[2])?.status || '')
+                  ? <Navigate to={`/processing/${location.pathname.split('/')[2]}`} replace />
+                  : <StudioView
+                  key={location.pathname}
                   projects={projects}
                   onUpdateProject={handleUpdateProject}
                   onSettingsSaved={handleSettingsSaved}
@@ -389,7 +455,7 @@ function AppContent() {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   onOpenNewDub={() => setIsNewDubOpen(true)}
-                />
+                />}
               </ProtectedRoute>
             }
           />

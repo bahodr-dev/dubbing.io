@@ -13,6 +13,7 @@
     "seed": "node server/scripts/seed.js",
     "migrate:db": "node server/scripts/migrate.js",
     "backup:db": "node server/scripts/backup.js",
+    "backup:film": "node server/scripts/backupFilm.js",
     "beta": "node server/scripts/beta.js",
     "preflight": "node server/scripts/preflight.js",
     "readiness": "node server/scripts/readiness.js",

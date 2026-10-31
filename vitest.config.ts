@@ -12,6 +12,15 @@ export default defineConfig({
   test: {
     env: {
       NODE_ENV: 'test',
+      TRANSLATION_PROVIDER: 'openai',
+      TRANSCRIPTION_PROVIDER: 'openai',
+      FILM_IDENTITY_PROVIDER: 'gemini',
+      FILM_SEPARATION_PROVIDER: 'fal',
+      TTS_PROVIDER: 'auto',
+      DEEPSEEK_API_KEY: '',
+      ELEVENLABS_API_KEY: '',
+      OPENAI_API_KEY: '',
+      GEMINI_API_KEY: '',
       DUBBING_DB_PATH: path.join(testRuntimeDir, 'dubbing.db'),
       DUBBING_UPLOADS_DIR: path.join(testRuntimeDir, 'uploads'),
     },

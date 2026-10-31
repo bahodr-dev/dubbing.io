@@ -1,3 +1,6 @@
+import { aiLimiter, pollingLimiter } from '../middleware/rateLimiter.js';
+import { validateTranscript } from '../validators/projectValidator.js';
+import { assertCinemaReady, cinemaCapabilities } from '../services/cinema.js';
 import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -11,6 +14,7 @@ import { JobManager, minutesForDuration } from '../services/jobQueue.js';
 import { getMediaDuration } from '../services/media/durationDetector.js';
 import * as mediaRepository from '../repositories/mediaRepository.js';
 import * as minuteUsageRepository from '../repositories/minuteUsageRepository.js';
+import { validateSpeechCadence } from '../services/speechCadence.js';
 
 export const dubbingRouter = Router();
 const MAX_MEDIA_DURATION_SECONDS = Number.parseInt(process.env.MAX_MEDIA_DURATION_SECONDS || '900', 10);
@@ -32,15 +36,28 @@ function assertDurationAllowed(duration) {
 
 // Apply auth middleware to all dubbing routes
 dubbingRouter.use(authenticateToken);
+dubbingRouter.use((req, res, next) => {
+  if (req.method === 'GET') return pollingLimiter(req, res, next);
+  return aiLimiter(req, res, next);
+});
+dubbingRouter.use((req, res, next) => {
+  const b = req.body || {};
+  if (b.text !== undefined && (typeof b.text !== 'string' || b.text.length > 10000)) return res.status(400).json({ error: 'Use text up to 10000 characters.' });
+  if (b.segments !== undefined && (!Array.isArray(b.segments) || b.segments.length > 100 || !validateTranscript(b.segments).valid)) return res.status(400).json({ error: 'Use at most 100 valid transcript segments.' });
+  if (Array.isArray(b.segments) && b.segments.reduce((sum, s) => sum + (s.originalText || s.text || '').length, 0) > 10000) return res.status(400).json({ error: 'Translate at most 10000 source characters per request.' });
+  if (req.path === '/generate' && (!Number.isFinite(b.duration ?? 30) || (b.duration ?? 30) <= 0 || b.duration > 300)) return res.status(400).json({ error: 'Generate duration must be between 0 and 300 seconds.' });
+  next();
+});
 
 // Exposes only safe boolean capabilities; credentials and provider details
 // remain server-side. The Studio uses it to prevent doomed render jobs.
-dubbingRouter.get('/capabilities', (_req, res) => {
+dubbingRouter.get('/capabilities', (req, res) => {
   return res.json({
     canRenderFinalDub: hasConfiguredTtsProvider(),
     requiredForFinalRender: hasConfiguredTtsProvider() ? [] : ['OPENAI_API_KEY or ELEVENLABS_API_KEY'],
     renderableVoiceIds: getRenderableVoiceIds(),
     canCloneVoices: canCloneVoices(),
+    cinema: cinemaCapabilities(req.user.id),
   });
 });
 
@@ -98,9 +115,13 @@ dubbingRouter.post('/process', async (req, res) => {
       targetLanguage = 'uz',
       voiceId = 'voice-farrux',
       autoCloneVoices = false,
-      voiceCloningConsent = false,
+      autoAssignSiteVoices = false,
+      speechCadence,
+      qualityMode = 'standard',
+      glossary = {},
     } = req.body;
 
+    assertCinemaReady(qualityMode, req.user.id);
     // Verify project ownership if projectId provided
     let ownedProject = null;
     if (projectId) {
@@ -129,6 +150,7 @@ dubbingRouter.post('/process', async (req, res) => {
     if (autoCloneVoices === true && validatedMediaId !== ownedProject?.source_media_id) {
       return res.status(400).json({ error: 'Automatic voice cloning requires the media attached to this project.' });
     }
+    validateSpeechCadence(speechCadence);
     if (!hasConfiguredTtsProvider()) {
       return res.status(503).json({
         error: 'Final dubbing requires an OpenAI or ElevenLabs TTS API key. Configure OPENAI_API_KEY or ELEVENLABS_API_KEY and try again.',
@@ -137,6 +159,8 @@ dubbingRouter.post('/process', async (req, res) => {
     }
     const authoritativeDuration = await getMediaDuration(fullFilePath);
     assertDurationAllowed(authoritativeDuration);
+    if (qualityMode === 'cinema' && authoritativeDuration > 300) return res.status(422).json({ error: 'Use the Film workflow in Studio for long Cinema sources.', code: 'FILM_WORKFLOW_REQUIRED' });
+    assertCinemaReady(qualityMode, req.user.id, authoritativeDuration);
 
     const job = JobManager.createJob({
       userId: req.user.id,
@@ -147,7 +171,8 @@ dubbingRouter.post('/process', async (req, res) => {
       targetLanguage,
       voiceId,
       autoCloneVoices,
-      voiceCloningConsent,
+      autoAssignSiteVoices,
+      speechCadence, qualityMode, glossary,
       duration: authoritativeDuration,
     });
 
@@ -170,6 +195,36 @@ dubbingRouter.post('/process', async (req, res) => {
   }
 });
 
+// Regeneration uses a fresh immutable project snapshot and the same artifact cache.
+dubbingRouter.post('/projects/:projectId/regenerate', async (req, res) => {
+  try {
+    const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.projectId, req.user.id);
+    if (!project) return res.status(404).json({ error: 'Project not found.' });
+    assertCinemaReady('cinema', req.user.id);
+    if (project.quality_mode !== 'cinema') return res.status(409).json({ error: 'Create a Cinema dub before regenerating segments.' });
+    const segments = JSON.parse(project.segments_json || '[]');
+    const ids = req.body.segmentIds;
+    if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== 'string' || !segments.some(s => s.id === id))) {
+      return res.status(400).json({ error: 'Choose valid segmentIds from this project.' });
+    }
+    const latest = JobManager.getLatestProjectJob(project.id, req.user.id);
+    const media = resolveUserMediaFile(req, project.source_media_id);
+    if (media?.error || !media) return res.status(404).json({ error: 'Source media not found.' });
+    const duration = await getMediaDuration(media.filePath);
+    const job = JobManager.createJob({ userId: req.user.id, projectId: project.id,
+      mediaId: project.source_media_id, filePath: media.filePath, duration,
+      originalLanguage: project.original_language, targetLanguage: project.target_language,
+      voiceId: project.voice_id, qualityMode: 'cinema', glossary: latest?.glossary || {}, segmentIds: [...new Set(ids)],
+      autoCloneVoices: latest?.autoCloneVoices === true,
+      filmMode: latest?.filmMode === true, budgetMicros: req.body.budgetMicros,
+      speechCadence: req.body.speechCadence || latest?.speechCadence || 'natural',
+    });
+    return res.status(202).json({ jobId: job.id, status: job.status, reservedMinutes: job.reservedMinutes, minutesBalance: job.minutesBalance });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message, code: error.code });
+  }
+});
+
 // 2. POLL JOB STATUS (Owner-isolated)
 dubbingRouter.get('/jobs/:jobId', (req, res) => {
   try {
@@ -189,7 +244,7 @@ dubbingRouter.get('/jobs/:jobId', (req, res) => {
       minutesBalance: Number(db.prepare('SELECT minutes_balance FROM users WHERE id = ?').get(req.user.id)?.minutes_balance || 0),
     };
 
-    if (job.status === 'completed') {
+    if (['completed', 'partial'].includes(job.status)) {
       responsePayload.result = job.result || {
         segments,
         segmentCount: segments.length,
@@ -240,9 +295,11 @@ dubbingRouter.post('/check-minutes', async (req, res) => {
     const mediaResult = resolveUserMediaFile(req, mediaId);
     if (mediaResult.error) return res.status(404).json({ error: mediaResult.error });
 
+    assertCinemaReady(req.body.qualityMode || 'standard', req.user.id);
     const duration = await getMediaDuration(mediaResult.filePath);
-    assertDurationAllowed(duration);
-    const requiredMinutes = minutesForDuration(duration);
+    assertCinemaReady(req.body.qualityMode || 'standard', req.user.id, duration);
+    if (req.body.qualityMode !== 'cinema') assertDurationAllowed(duration);
+    const requiredMinutes = minutesForDuration(duration, req.body.qualityMode === 'cinema' || req.body.autoCloneVoices === true ? 1.5 : 1);
     if (!requiredMinutes) return res.status(422).json({ error: 'Could not determine media duration.' });
     const user = db.prepare('SELECT minutes_balance FROM users WHERE id = ?').get(req.user.id);
     const minutesBalance = Number(user?.minutes_balance || 0);
@@ -254,7 +311,7 @@ dubbingRouter.post('/check-minutes', async (req, res) => {
     });
   } catch (err) {
     console.error('Error checking media minutes:', err);
-    return res.status(422).json({ error: 'Could not check the video duration. Try another media file.' });
+    return res.status(err.status || 422).json({ error: err.message || 'Could not check the video duration.', code: err.code });
   }
 });
 
@@ -340,7 +397,7 @@ dubbingRouter.get('/transcribe/jobs/:jobId', (req, res) => {
       job,
     };
 
-    if (job.status === 'completed') {
+    if (['completed', 'partial'].includes(job.status)) {
       responsePayload.result = {
         segments,
         segmentCount: segments.length,
@@ -418,7 +475,7 @@ dubbingRouter.post('/transcribe', async (req, res) => {
       providerType = 'auto',
     } = req.body;
 
-    const allowedProviders = new Set(['auto', 'openai', 'mock']);
+    const allowedProviders = new Set(['auto', 'openai', 'elevenlabs', 'mock']);
     if (!allowedProviders.has(providerType)) {
       return res.status(400).json({ error: 'Unsupported transcription provider.' });
     }

@@ -8,6 +8,7 @@ import { app } from '../app.js';
 import { db, uploadsDir } from '../db.js';
 import * as transcriptionRepo from '../repositories/transcriptionRepository.js';
 import * as mediaRepo from '../repositories/mediaRepository.js';
+import { JobManager } from '../services/jobQueue.js';
 import { createInstantVoiceClone, deleteInstantVoiceClone, cloneJobSpeakers, verifyProjectDiarization } from '../services/ai/voiceCloning.js';
 
 afterEach(() => {
@@ -16,6 +17,29 @@ afterEach(() => {
 });
 
 describe('ElevenLabs voice cloning', () => {
+  it('queues a first dub with cloning before any transcript exists', async () => {
+    vi.stubEnv('ELEVENLABS_API_KEY', 'test-clone-key');
+    const signup = await request(app).post('/api/auth/signup').send({
+      email: `clone-first-${randomUUID()}@dubla.uz`, password: 'Password123!', name: 'Voice Owner',
+    });
+    const cookie = signup.headers['set-cookie'].find((value) => value.includes('dubla_session='));
+    const project = await request(app).post('/api/projects').set('Cookie', cookie).send({ title: 'First dub' });
+    const media = mediaRepo.createMediaAsset({
+      userId: signup.body.user.id, projectId: project.body.project.id,
+      originalFilename: 'source.wav', storedFilename: `source-${randomUUID()}.wav`,
+      storagePath: path.join(uploadsDir, `source-${randomUUID()}.wav`),
+      mimeType: 'audio/wav', sizeBytes: 1024, mediaType: 'audio',
+    });
+    db.prepare('UPDATE projects SET source_media_id = ? WHERE id = ?').run(media.id, project.body.project.id);
+    vi.spyOn(JobManager, 'dispatchPersistedJob').mockReturnValue(true);
+    const job = JobManager.createJob({
+      userId: signup.body.user.id, projectId: project.body.project.id, mediaId: media.id,
+      duration: 3, voiceId: 'voice-chloe', targetLanguage: 'fr',
+      autoCloneVoices: true, voiceCloningConsent: true,
+    });
+    expect(job.status).toBe('queued');
+    expect(job.reservedMinutes).toBe(0.075);
+  });
   it('sends a speaker sample to the cloning endpoint and returns the provider voice ID', async () => {
     vi.stubEnv('ELEVENLABS_API_KEY', 'test-clone-key');
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dubla-clone-test-'));
@@ -46,12 +70,12 @@ describe('ElevenLabs voice cloning', () => {
     expect(fetchClient.mock.calls[0][1].method).toBe('DELETE');
   });
 
-  it('requires recorded consent before reading project media', async () => {
+  it('rejects unknown project media without a per-job consent parameter', async () => {
     vi.stubEnv('ELEVENLABS_API_KEY', 'test-clone-key');
     await expect(cloneJobSpeakers({
       jobId: 'unknown-job', userId: 'unknown-user', projectId: 'unknown-project',
-      segments: [], consentAt: null,
-    })).rejects.toThrow(/permission from every speaker/i);
+      segments: [],
+    })).rejects.toThrow(/does not belong to this dubbing job/i);
   });
 
   it('rejects a job that does not belong to the stated owner and project', async () => {

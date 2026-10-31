@@ -1,9 +1,12 @@
+import { textProvider, audioProvider } from '../services/ai/textProvider.js';
 const PLACEHOLDER = /^(your_|change|development|test_|$)/i;
 
 export function validateProductionConfig(env = process.env) {
   if (env.NODE_ENV !== 'production') return;
   const required = [
-    'APP_URL', 'JWT_SECRET', 'OPENAI_API_KEY', 'ELEVENLABS_API_KEY',
+    'APP_URL', 'JWT_SECRET', 'ELEVENLABS_API_KEY',
+    ...(textProvider(env).provider === 'deepseek' ? ['DEEPSEEK_API_KEY'] : ['OPENAI_API_KEY']),
+    ...(audioProvider(env) === 'openai' ? ['OPENAI_API_KEY'] : []),
     'PAYME_MERCHANT_ID', 'PAYME_SECRET_KEY', 'CLICK_SERVICE_ID',
     'CLICK_MERCHANT_ID', 'CLICK_SECRET_KEY', 'SENTRY_DSN', 'APP_RELEASE',
   ];

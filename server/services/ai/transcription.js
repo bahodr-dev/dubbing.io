@@ -102,6 +102,7 @@ export async function transcribeAudio({
     });
 
     result.segments.duration = actualDuration;
+    result.segments.language = result.segments.language || result.language || language;
     return result.segments;
   } catch (err) {
     logEvent('transcription_failed', {

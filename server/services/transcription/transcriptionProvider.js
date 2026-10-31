@@ -1,7 +1,18 @@
+import { ElevenLabsTranscriptionProvider } from './elevenLabsTranscriptionProvider.js';
+import { audioProvider } from '../ai/textProvider.js';
 import fs from 'fs';
 import path from 'path';
 import { normalizeTranscript } from './transcriptNormalizer.js';
 import { splitAudioIntoChunks } from './transcriptionChunker.js';
+
+function normalizeDetectedLanguage(value, fallback = 'auto') {
+  const language = String(value || '').trim().toLowerCase();
+  const aliases = {
+    english: 'en', uzbek: 'uz', spanish: 'es', german: 'de',
+    french: 'fr', japanese: 'ja', arabic: 'ar',
+  };
+  return aliases[language] || (/^[a-z]{2}$/.test(language) ? language : fallback);
+}
 
 /**
  * Base abstract interface for Transcription Providers
@@ -54,7 +65,7 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
     const diarize = this.model === 'gpt-4o-transcribe-diarize';
     formData.append('response_format', diarize ? 'diarized_json' : this.model === 'whisper-1' ? 'verbose_json' : 'json');
     if (diarize) formData.append('chunking_strategy', 'auto');
-    if (language) {
+    if (language && language !== 'auto') {
       formData.append('language', language);
     }
     if (prompt && !diarize) {
@@ -123,7 +134,7 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
       }));
     }
 
-    const detectedLanguage = data.language || language || 'en';
+    const detectedLanguage = normalizeDetectedLanguage(data.language, language || 'auto');
     const chunkDuration = typeof data.duration === 'number' ? data.duration : (typeof duration === 'number' ? duration : 0);
 
     if (rawSegments.length === 0 && data.text && data.text.trim()) {
@@ -185,10 +196,12 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
         }
 
         const finalDuration = totalChunkDuration > 0 ? totalChunkDuration : duration;
-        return normalizeTranscript(allSegments, {
+        const normalized = normalizeTranscript(allSegments, {
           language: detectedLanguage,
           fallbackDuration: finalDuration,
         });
+        normalized.language = detectedLanguage;
+        return normalized;
       } finally {
         cleanup();
       }
@@ -211,10 +224,12 @@ export class OpenAITranscriptionProvider extends TranscriptionProvider {
     }
 
     const finalDuration = result.duration > 0 ? result.duration : (typeof duration === 'number' ? duration : 0);
-    return normalizeTranscript(result.rawSegments, {
+    const normalized = normalizeTranscript(result.rawSegments, {
       language: result.language,
       fallbackDuration: finalDuration,
     });
+    normalized.language = result.language;
+    return normalized;
   }
 }
 
@@ -290,6 +305,11 @@ export class TranscriptionProviderFactory {
     shouldFail = false,
   } = {}) {
     const isProduction = process.env.NODE_ENV === 'production';
+    if (type !== 'mock' && audioProvider() === 'transcript') throw new Error('Audio transcription is disabled. DeepSeek accepts text: import SRT/JSON source subtitles.');
+    if (type === 'elevenlabs' || (type === 'auto' && audioProvider() === 'elevenlabs')) {
+      return new ElevenLabsTranscriptionProvider({ apiKey: process.env.ELEVENLABS_API_KEY, fetchClient });
+    }
+    if (!['auto', 'openai', 'mock'].includes(type)) throw new Error('Unsupported transcription provider.');
 
     // 1. Explicitly requested mock provider
     if (type === 'mock') {

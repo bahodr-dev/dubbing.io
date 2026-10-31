@@ -1,4 +1,4 @@
-import type { Project, Voice, TranscriptSegment } from '../types';
+import type { Project, Voice, TranscriptSegment, SpeechCadence } from '../types';
 
 export interface UserProfile {
   id: string;
@@ -213,20 +213,21 @@ class ApiClient {
 
   // 3. AI DUBBING ENGINE & EXPORTS
   public dubbing = {
-    checkMinutes: async (mediaId: string): Promise<{
+    checkMinutes: async (mediaId: string, autoCloneVoices = false, qualityMode: 'standard' | 'cinema' = 'standard'): Promise<{
       canStart: boolean;
       duration: number;
       requiredMinutes: number;
       minutesBalance: number;
     }> => this.request('/dubbing/check-minutes', {
       method: 'POST',
-      body: JSON.stringify({ mediaId }),
+      body: JSON.stringify({ mediaId, autoCloneVoices, qualityMode }),
     }),
     getCapabilities: async (): Promise<{
       canRenderFinalDub: boolean;
       requiredForFinalRender: string[];
       renderableVoiceIds: string[];
       canCloneVoices: boolean;
+      cinema?: { enabled: boolean; ready: boolean; maxDuration: number | null; separationProvider?: 'fal' | 'none'; transcriptionProvider?: string; characterMatching?: string; translationProvider?: string };
     }> => this.request('/dubbing/capabilities'),
 
     process: async (payload: {
@@ -237,6 +238,9 @@ class ApiClient {
       targetLanguage?: string;
       voiceId?: string;
       autoCloneVoices?: boolean;
+      autoAssignSiteVoices?: boolean;
+      speechCadence: SpeechCadence;
+      qualityMode?: 'standard' | 'cinema';
       voiceCloningConsent?: boolean;
       duration?: number;
     }): Promise<{ jobId: string; status: string; reservedMinutes: number; minutesBalance: number; message: string }> => {
@@ -245,6 +249,9 @@ class ApiClient {
         body: JSON.stringify(payload),
       });
     },
+
+    regenerate: async (projectId: string, payload: { segmentIds: string[]; voiceCloningConsent?: boolean; speechCadence: SpeechCadence }): Promise<{ jobId: string; minutesBalance: number }> =>
+      this.request(`/dubbing/projects/${projectId}/regenerate`, { method: 'POST', body: JSON.stringify(payload) }),
 
     getJob: async (jobId: string): Promise<{ job: any; minutesBalance: number }> => {
       return this.request<{ job: any; minutesBalance: number }>(`/dubbing/jobs/${jobId}`);
@@ -371,6 +378,7 @@ class ApiClient {
 
   // 5. PROJECTS MANAGEMENT
   public projects = {
+    get: async (id: string): Promise<{ project: Project }> => this.request(`/projects/${encodeURIComponent(id)}`),
     list: async (params: ProjectListParams = {}): Promise<ProjectListResponse> => {
       const query = new URLSearchParams();
       if (params.page !== undefined) query.set('page', String(params.page));

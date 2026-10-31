@@ -1,6 +1,9 @@
+import { FilmPanel } from '../components/FilmPanel';
+import { QualityModeField } from '../components/QualityModeField';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { Project, Voice } from '../types';
+import type { Project, Voice, SpeechCadence } from '../types';
+import { SpeechCadenceField } from '../components/SpeechCadenceField';
 import { VOICES } from '../data/voices';
 import { SUPPORTED_LANGUAGES } from '../data/languages';
 import { VideoPlayer } from '../components/VideoPlayer';
@@ -55,7 +58,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setProject(targetProject);
   }
 
-  const [isProcessing, setIsProcessing] = useState(project?.status === 'processing');
+  const [isProcessing, setIsProcessing] = useState(project?.status === 'processing' && project?.qualityMode !== 'cinema');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [currentTranscriptionJobId, setCurrentTranscriptionJobId] = useState<string | null>(null);
   const [transcriptionPollVersion, setTranscriptionPollVersion] = useState(0);
@@ -70,7 +73,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [canRenderFinalDub, setCanRenderFinalDub] = useState<boolean | null>(null);
   const [canCloneVoices, setCanCloneVoices] = useState<boolean | null>(null);
   const [autoCloneVoices, setAutoCloneVoices] = useState(true);
-  const [voiceCloningConsent, setVoiceCloningConsent] = useState(false);
+  const [qualityMode, setQualityMode] = useState<'standard' | 'cinema'>(project?.qualityMode || 'standard');
+  const [speechCadence, setSpeechCadence] = useState<SpeechCadence | null>(null);
   const [renderableVoiceIds, setRenderableVoiceIds] = useState<string[] | null>(null);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
 
@@ -81,6 +85,19 @@ export const StudioView: React.FC<StudioViewProps> = ({
   useEffect(() => {
     onUpdateProjectRef.current = onUpdateProject;
   }, [onUpdateProject]);
+
+  useEffect(() => {
+    if (!project?.id || project.status !== 'completed') return;
+    let cancelled = false;
+    api.dubbing.getLatestProjectJob(project.id).then(({ job }) => {
+      if (!cancelled) {
+        setAutoCloneVoices(job.autoCloneVoices === true);
+        setSpeechCadence(job.speechCadence || 'natural');
+        setQualityMode(job.qualityMode || 'standard');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [project?.id, project?.status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,13 +119,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
   }, []);
 
   useEffect(() => {
-    if (project?.status !== 'processing' || currentJobId) return;
+    if (project?.status !== 'processing' || currentJobId || project.qualityMode === 'cinema') return;
 
     let cancelled = false;
     api.dubbing.getLatestProjectJob(project.id)
       .then((response) => {
         if (!cancelled && response?.jobId) {
           setCurrentJobId(response.jobId);
+          setQualityMode(response.job?.qualityMode || 'standard');
           setIsProcessing(true);
         }
       })
@@ -120,7 +138,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [project?.id, project?.status, currentJobId]);
+  }, [project?.id, project?.status, project?.qualityMode, currentJobId]);
 
   useEffect(() => {
     if (!project?.id || project.transcript.length > 0) return;
@@ -262,8 +280,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
   const handleStartGeneration = async () => {
     if (isProcessing || isStartingProcessRef.current || saveStatus === 'saving' || settingsSaveInFlightRef.current) return;
-    if (autoCloneVoices && !voiceCloningConsent) {
-      showError('Confirm that every speaker has permitted voice cloning before starting.');
+    if (!speechCadence) {
+      showError('Choose a Speech Cadence before starting dubbing.');
       return;
     }
     if (autoCloneVoices && project.transcript.some((segment) => !segment.speaker || segment.speakerSource !== 'diarization')) {
@@ -303,7 +321,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
         targetLanguage: project.targetLanguage,
         voiceId: project.voiceId,
         autoCloneVoices,
-        voiceCloningConsent: autoCloneVoices && voiceCloningConsent,
+        speechCadence, qualityMode,
         duration: project.duration,
       });
 
@@ -341,6 +359,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
     const updated: Project = {
       ...project,
       transcript: updatedTranscript,
+      qualityMode: result?.qualityMode || project.qualityMode,
+      dialogueUrl: result?.dialogueUrl || project.dialogueUrl,
+      backgroundUrl: result?.backgroundUrl || project.backgroundUrl,
       audioUrl: result?.audioUrl || project.audioUrl,
       dubbedAudioUrl: result?.audioUrl || project.dubbedAudioUrl,
       dubbedVideoUrl: result?.videoUrl || project.dubbedVideoUrl,
@@ -387,6 +408,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
         ...seg,
         originalText,
         translatedText,
+        ...(project.qualityMode === 'cinema' ? { regenerationStatus: 'pending' as const } : {}),
         translationEdited: translatedText !== seg.translatedText
           ? true
           : originalText !== seg.originalText ? false : seg.translationEdited,
@@ -547,13 +569,21 @@ export const StudioView: React.FC<StudioViewProps> = ({
         </div>
       </div>
 
+      <FilmPanel project={project} onRefresh={() => { void api.projects.get(project.id).then(({ project: latest }) => { setProject(latest); onSettingsSaved?.(project.id, latest); }); }} />
       {/* Workspace Content */}
       {isProcessing ? (
         <ProcessingView
           project={project}
           jobId={currentJobId}
           onComplete={handleProcessingComplete}
-          onError={(msg) => showError(msg)}
+          onError={(msg) => {
+            showError(msg);
+            if (qualityMode === 'cinema') {
+              api.projects.get(project.id).then(({ project: latest }) => {
+                setProject(latest); setIsProcessing(false); onSettingsSaved?.(project.id, latest);
+              }).catch(() => {});
+            }
+          }}
           onRetry={handleRetryGeneration}
           onMinutesBalanceChange={onMinutesBalanceChange}
         />
@@ -664,6 +694,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                       disabled={isSettingsSaving}
                       onChange={e => handleLanguageChange('originalLanguage', e.target.value)}
                     >
+                      <option value="auto">Auto detect</option>
                       {SUPPORTED_LANGUAGES.map(lang => (
                         <option key={lang.code} value={lang.code}>
                           {lang.name}
@@ -793,10 +824,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 </label>
                 {autoCloneVoices && (
                   <>
-                    <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginBottom: '10px', fontSize: 'var(--text-control)', lineHeight: 1.45 }}>
-                      <input type="checkbox" checked={voiceCloningConsent} onChange={(event) => setVoiceCloningConsent(event.target.checked)} disabled={isProcessing} />
-                      I confirm I have permission from every speaker to clone and use their voice in this dub.
-                    </label>
+                    <p role="status" style={{ marginBottom: 10 }}>Voice cloning tanlansa, kreditlaringiz 1,5 barobar ko‘p sarflanadi.</p>
                     {canCloneVoices === false && (
                       <p role="status" style={{ marginBottom: '12px', fontSize: 'var(--text-body)', color: 'var(--black-70)' }}>
                         Automatic voice cloning requires an ElevenLabs API key on the server.
@@ -806,6 +834,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 )}
 
                 {/* Generate Dub Primary Action */}
+                <QualityModeField value={qualityMode} onChange={setQualityMode} disabled={isProcessing} />
+                <SpeechCadenceField value={speechCadence} onChange={setSpeechCadence} disabled={isProcessing || isSettingsSaving} />
                 <button
                   type="button"
                   onClick={handleStartGeneration}
@@ -827,9 +857,27 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
             {/* Right Column: Transcript & Translation Editor */}
             <div>
+              {project.qualityMode === 'cinema' && <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+                {([["Original", project.sourceVideoUrl || project.videoUrl], ["Clean dialogue", project.dialogueUrl], ["Music & effects", project.backgroundUrl], ["Final dub", project.dubbedAudioUrl]] as const).map(([label, url]) => url &&
+                  <label key={label}>{label}<audio controls preload="none" src={url} style={{ display: 'block', width: '100%' }} /></label>)}
+              </div>}
               <TranscriptEditor
                 segments={project.transcript}
                 onUpdateSegment={handleUpdateSegment}
+                onChangeMetadata={project.qualityMode === 'cinema' ? async (id, patch) => {
+                  const transcript = project.transcript.map(s => s.id === id ? { ...s, ...patch, regenerationStatus: 'pending' as const } : s);
+                  setSaveStatus('saving');
+                  try { await api.projects.updateTranscript(project.id, transcript); setProject({ ...project, transcript }); setSaveStatus('saved'); }
+                  catch { setSaveStatus('error'); showError('Could not save segment changes.'); }
+                } : undefined}
+                onRegenerate={project.qualityMode === 'cinema' && !isProcessing ? async (id) => {
+                  if (saveStatus !== 'saved') { showError('Save your edits before regenerating.'); return; }
+                  try {
+                    const response = await api.dubbing.regenerate(project.id, { segmentIds: [id], speechCadence: speechCadence || 'natural' });
+                    setCurrentJobId(response.jobId); setIsProcessing(true); setProject({ ...project, status: 'processing' });
+                    onMinutesBalanceChange?.(response.minutesBalance);
+                  } catch (error) { showError(error instanceof Error ? error.message : 'Could not regenerate segment.'); }
+                } : undefined}
                 targetLanguage={project.targetLanguage}
                 originalLanguage={project.originalLanguage}
                 currentPlayTime={currentPlayTime}

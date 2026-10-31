@@ -87,7 +87,8 @@ describe('StudioView Component', () => {
     );
 
     const generateBtn = screen.getByText('Generate dub →');
-    fireEvent.click(screen.getByLabelText(/I confirm I have permission from every speaker/i));
+    fireEvent.click(screen.getByLabelText('Speech Cadence'));
+    fireEvent.click(screen.getByRole('option', { name: /Narrative Pacing/ }));
     fireEvent.click(generateBtn);
 
     await waitFor(() => {
@@ -98,7 +99,7 @@ describe('StudioView Component', () => {
           targetLanguage: 'uz',
           voiceId: 'voice-farrux',
           autoCloneVoices: true,
-          voiceCloningConsent: true,
+          speechCadence: 'narrative',
         })
       );
     });

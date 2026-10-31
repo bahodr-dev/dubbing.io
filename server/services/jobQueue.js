@@ -1,3 +1,8 @@
+import { separationProvider } from './filmExperiment.js';
+import { audioProvider } from './ai/textProvider.js';
+import { runFilmPipeline } from './filmPipeline.js';
+import { initializeFilmBudget } from './filmStore.js';
+import { assertCinemaReady, runCinemaPipeline } from './cinema.js';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -16,6 +21,8 @@ import * as mediaRepository from '../repositories/mediaRepository.js';
 import * as minuteUsageRepository from '../repositories/minuteUsageRepository.js';
 import { logEvent } from './logger.js';
 import { validateProjectPayload, validateTranscript } from '../validators/projectValidator.js';
+import { assignSiteVoices, availableSiteVoices } from './automaticVoices.js';
+import { validateSpeechCadence } from './speechCadence.js';
 
 function sanitizeError(err) {
   if (!err) return 'Transcription failed';
@@ -71,9 +78,9 @@ function resolveStoredMediaPath(mediaId, userId) {
   return filePath;
 }
 
-export function minutesForDuration(durationSeconds) {
+export function minutesForDuration(durationSeconds, multiplier = 1) {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
-  return Math.round((Math.ceil(durationSeconds) / 60) * 1_000_000) / 1_000_000;
+  return Math.round((Math.ceil(durationSeconds) / 60) * multiplier * 1_000_000) / 1_000_000;
 }
 
 export function resolveSegmentVoiceId(segment, { voiceId, speakerVoices } = {}) {
@@ -95,7 +102,7 @@ function insufficientMinutesError(requiredMinutes, balance) {
   return error;
 }
 
-async function synthesizeWithRetry(options, maxAttempts = 3) {
+async function synthesizeWithRetry(options, maxAttempts = 1) {
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -153,6 +160,9 @@ export class JobManager {
     };
 
     const createPersistedJob = db.transaction(() => {
+      if (projectId && dubbingJobRepo.findActiveDubbingJobByProjectAndUser(projectId, userId)) {
+        throw Object.assign(new Error('Wait for dubbing to finish before transcription.'), { status: 409 });
+      }
       const activeJob = transcriptionRepo.findActiveJobForSource(userId, projectId, mediaId);
       if (activeJob) {
         const error = new Error('This source already has an active transcription job.');
@@ -377,30 +387,47 @@ export class JobManager {
     voiceId = 'voice-farrux',
     duration = null,
     autoCloneVoices = false,
-    voiceCloningConsent = false,
+    autoAssignSiteVoices = false,
+    speechCadence = 'natural',
+    qualityMode = 'standard',
+    segmentIds = null,
+    glossary = {},
+    filmMode = false,
+    budgetMicros,
   } = {}) {
+    filmMode = filmMode || (qualityMode === 'cinema' && (separationProvider() === 'none' || audioProvider() === 'transcript'));
+    validateSpeechCadence(speechCadence);
+    assertCinemaReady(qualityMode, userId, duration);
+    if (qualityMode === 'cinema' && (!glossary || typeof glossary !== 'object' || Array.isArray(glossary) || Object.entries(glossary).length > 100 || Object.entries(glossary).some(([name, translation]) => name.length > 160 || typeof translation !== 'string' || translation.length > 500))) {
+      throw Object.assign(new Error('Use a glossary with at most 100 name-to-translation entries.'), { status: 400 });
+    }
+    if (qualityMode === 'cinema' && !projectId) throw Object.assign(new Error('Cinema requires a saved project.'), { status: 400 });
     const id = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
-    const useCloning = autoCloneVoices === true;
+    if (filmMode && duration > Number(process.env.MAX_FILM_DURATION_SECONDS || 21600)) throw Object.assign(new Error('Film exceeds the configured maximum duration.'), { status: 422 });
+    const useCloning = filmMode || autoCloneVoices === true;
+    if (filmMode && (!['en', 'ru'].includes(originalLanguage) || targetLanguage !== 'uz' || qualityMode !== 'cinema')) throw Object.assign(new Error('Film dubbing supports English or Russian to Uzbek.'), { status: 400 });
     const authoritativeDuration = Number.isFinite(duration) && duration > 0 ? duration : null;
-    const requiredMinutes = minutesForDuration(authoritativeDuration);
+    const creditMultiplier = useCloning ? 1.5 : 1;
+    const requiredMinutes = minutesForDuration(authoritativeDuration, creditMultiplier);
     if (!requiredMinutes) {
       const error = new Error('A valid server-detected media duration is required before dubbing can start.');
       error.status = 400;
       error.code = 'INVALID_MEDIA_DURATION';
       throw error;
     }
-    if (!isRenderableVoiceId(voiceId)) {
+    if (!isRenderableVoiceId(voiceId) && !autoAssignSiteVoices && !useCloning) {
       const error = new Error('The selected primary voice is not available for final dubbing.');
       error.status = 400;
       error.code = 'UNSUPPORTED_VOICE';
       throw error;
     }
-    if (useCloning && (voiceCloningConsent !== true || !projectId)) {
-      const error = new Error('Permission from every speaker and a saved project are required for automatic voice cloning.');
+    if (autoAssignSiteVoices && availableSiteVoices(targetLanguage).length === 0) {
+      const error = new Error(`No site voice is available for ${targetLanguage}. Choose voice cloning or another target language.`);
       error.status = 400;
-      error.code = 'VOICE_CLONING_CONSENT_REQUIRED';
+      error.code = 'NO_SITE_VOICE';
       throw error;
     }
+    if (useCloning && !projectId) throw Object.assign(new Error('A saved project is required for voice cloning.'), { status: 400 });
     if (useCloning && !canCloneVoices()) {
       const error = new Error('Automatic voice cloning requires an ELEVENLABS_API_KEY.');
       error.status = 503;
@@ -425,13 +452,18 @@ export class JobManager {
       params: {
         originalLanguage, targetLanguage, voiceId, duration: authoritativeDuration,
         autoCloneVoices: useCloning,
-        voiceCloningConsentAt: useCloning ? new Date().toISOString() : null,
+        creditMultiplier,
+        speechCadence, qualityMode, segmentIds, glossary, filmMode,
+        autoAssignSiteVoices: autoAssignSiteVoices === true,
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     const createWithReservation = db.transaction(() => {
+      if (qualityMode === 'cinema' && transcriptionRepo.findActiveJobForSource(userId, projectId, mediaId)) {
+        throw Object.assign(new Error('Wait for transcription to finish before Cinema dubbing.'), { status: 409 });
+      }
       const activeJob = projectId
         ? dubbingJobRepo.findActiveDubbingJobByProjectAndUser(projectId, userId)
         : dubbingJobRepo.findActiveDubbingJobByMediaAndUser(mediaId, userId);
@@ -443,19 +475,22 @@ export class JobManager {
       }
 
       if (projectId) {
-        const project = db.prepare('SELECT segments_json, speaker_voices_json, source_media_id FROM projects WHERE id = ? AND user_id = ?')
+        const project = db.prepare('SELECT segments_json, speaker_voices_json, source_media_id, edit_revision, quality_mode FROM projects WHERE id = ? AND user_id = ?')
           .get(projectId, userId);
         if (!project) {
           const error = new Error('Project not found or unauthorized.');
           error.status = 404;
           throw error;
         }
+        job.params.editRevision = project.edit_revision;
+        if (qualityMode === 'cinema' && mediaId !== project.source_media_id) throw Object.assign(new Error('Cinema requires the project source media.'), { status: 400 });
         if (useCloning && (!mediaId || mediaId !== project.source_media_id)) {
           const error = new Error('Automatic voice cloning requires the media attached to this project.');
           error.status = 400;
           error.code = 'PROJECT_MEDIA_REQUIRED';
           throw error;
         }
+        if (filmMode && audioProvider() === 'transcript' && !project.segments_json) throw Object.assign(new Error('Import timed source subtitles before starting the DeepSeek experiment.'), { status: 422, code: 'SOURCE_TRANSCRIPT_REQUIRED' });
         if (project.segments_json) {
           let savedSegments;
           try {
@@ -463,6 +498,7 @@ export class JobManager {
           } catch {
             savedSegments = null;
           }
+          if (filmMode && audioProvider() === 'transcript' && !savedSegments?.length) throw Object.assign(new Error('DeepSeek cannot transcribe audio. Import a timed SRT/JSON source transcript before starting this experiment.'), { status: 422, code: 'SOURCE_TRANSCRIPT_REQUIRED' });
           const validation = validateTranscript(savedSegments);
           if (!validation.valid) {
             const error = new Error('The saved transcript is invalid. Correct it before starting the dub.');
@@ -470,10 +506,11 @@ export class JobManager {
             error.code = 'INVALID_SAVED_TRANSCRIPT';
             throw error;
           }
+          if (qualityMode === 'cinema' && savedSegments.some(s => s.endTime > authoritativeDuration + 0.01)) throw Object.assign(new Error('Transcript extends beyond this scene.'), { status: 400 });
           job.params.savedSegments = savedSegments;
-          if (useCloning && savedSegments.length > 0) {
+          if (useCloning && !filmMode && savedSegments.length > 0) {
             try {
-              verifyProjectDiarization({ userId, projectId, mediaId, segments: savedSegments });
+              verifyProjectDiarization({ userId, projectId, mediaId, segments: savedSegments, allowSpeakerCorrections: qualityMode === 'cinema' });
             } catch (cause) {
               const error = new Error(cause.message);
               error.status = 400;
@@ -488,12 +525,6 @@ export class JobManager {
               throw error;
             }
           }
-        }
-        if (useCloning && !job.params.savedSegments?.length) {
-          const error = new Error('Transcribe the source video before automatic voice cloning.');
-          error.status = 400;
-          error.code = 'SPEAKER_IDENTIFICATION_REQUIRED';
-          throw error;
         }
         if (project.speaker_voices_json) {
           let speakerVoices;
@@ -522,6 +553,7 @@ export class JobManager {
       }
 
       dubbingJobRepo.createDubbingJob(job);
+      if (filmMode) initializeFilmBudget(id, budgetMicros);
       const reservation = minuteUsageRepository.reserveMinutesForJobInTransaction({
         userId,
         projectId,
@@ -539,8 +571,8 @@ export class JobManager {
     jobs.set(id, job);
 
     if (projectId) {
-      db.prepare(`UPDATE projects SET status = 'processing', duration = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
-        .run(authoritativeDuration, projectId, userId);
+      db.prepare(`UPDATE projects SET status = 'processing', quality_mode = ?, duration = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+        .run(qualityMode, authoritativeDuration, projectId, userId);
     }
 
     this.dispatchPersistedJob(id, filePath);
@@ -561,6 +593,12 @@ export class JobManager {
     }, Math.max(15_000, Math.floor(JOB_LEASE_MS / 3)));
     heartbeatTimer.unref?.();
     try {
+      if (params.filmMode) {
+        return await runFilmPipeline(job, params, () => { if (!persistDubbingJob(job)) throw new Error('Dubbing worker lease was lost.'); });
+      }
+      if (params.qualityMode === 'cinema') {
+        return await runCinemaPipeline(job, params, () => { if (!persistDubbingJob(job)) throw new Error('Dubbing worker lease was lost.'); });
+      }
       // Stage 1: Transcribing Audio (ASR)
       job.status = 'transcribing';
       job.currentStage = 'Transcribing audio with neural Whisper model...';
@@ -584,6 +622,22 @@ export class JobManager {
           jobId: job.id,
         });
 
+      const detectedLanguage = rawSegments.language || params.originalLanguage || 'auto';
+      if (params.autoCloneVoices && savedSegments.length === 0) {
+        const evidence = transcriptionRepo.createTranscriptionJob({
+          userId: job.userId, projectId: job.projectId, mediaId: job.mediaId,
+          status: 'completed', language: detectedLanguage, duration: actualDuration,
+        });
+        transcriptionRepo.saveTranscriptSegments(evidence.id, job.projectId, rawSegments);
+      }
+      if (params.autoAssignSiteVoices) {
+        params.speakerVoices = assignSiteVoices(rawSegments, params.targetLanguage, params.voiceId);
+        params.voiceId = Object.values(params.speakerVoices)[0];
+        job.params.speakerVoices = params.speakerVoices;
+        job.params.voiceId = params.voiceId;
+        if (!persistDubbingJob(job)) throw new Error('Dubbing worker lease was lost.');
+      }
+
       // Stage 2: Translating Segments
       job.status = 'translating';
       job.currentStage = `Translating spoken dialog into ${params.targetLanguage.toUpperCase()}...`;
@@ -593,7 +647,7 @@ export class JobManager {
 
       const translatedSegments = await translateSegments({
         segments: rawSegments,
-        sourceLanguage: params.originalLanguage,
+        sourceLanguage: detectedLanguage,
         targetLanguage: params.targetLanguage,
         preserveExistingTranslations: savedSegments.length > 0,
       });
@@ -610,7 +664,6 @@ export class JobManager {
           userId: job.userId,
           projectId: job.projectId,
           segments: rawSegments,
-          consentAt: params.voiceCloningConsentAt,
         })
         : null;
 
@@ -686,6 +739,7 @@ export class JobManager {
         totalDuration: job.duration,
         projectTitle: project?.title || 'dubbed-project',
         renderVideo,
+        speechCadence: params.speechCadence || 'natural',
       });
 
       const registerRenderedAssets = db.transaction(() => {
@@ -731,23 +785,29 @@ export class JobManager {
         segmentCount: translatedSegments.length,
       };
       job.updatedAt = new Date().toISOString();
+      db.transaction(() => {
       if (!persistDubbingJob(job, { result: job.result })) throw new Error('Dubbing worker lease was lost.');
       minuteUsageRepository.consumeMinutesForJob(job.id);
 
-      // If tied to a project in DB, update project record
       if (job.projectId) {
-        try {
           db.prepare(`
             UPDATE projects 
             SET segments_json = ?, output_media_id = ?, output_audio_media_id = ?,
-                status = 'completed', updated_at = CURRENT_TIMESTAMP
+                speaker_voices_json = ?, voice_id = ?, original_language = ?, status = 'completed', updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND user_id = ?
-          `).run(JSON.stringify(translatedSegments), videoAsset?.id || null, audioAsset.id, job.projectId, job.userId);
-        } catch (dbErr) {
-          console.warn('[JobManager] Could not update project in DB:', dbErr);
-        }
+          `).run(JSON.stringify(translatedSegments), videoAsset?.id || null, audioAsset.id,
+            JSON.stringify(params.speakerVoices || {}), params.voiceId, detectedLanguage, job.projectId, job.userId);
       }
+      }).immediate();
     } catch (err) {
+      if (params.filmMode && ['FILM_BUDGET_REACHED', 'FILM_PROVIDER_UNCERTAIN'].includes(err.code)) {
+        job.status = 'paused'; job.error = err.message; job.currentStage = err.code;
+        db.transaction(() => {
+          if (!persistDubbingJob(job)) throw new Error('Dubbing worker lease was lost.');
+          db.prepare("UPDATE projects SET status = 'paused' WHERE id = ? AND user_id = ?").run(job.projectId, job.userId);
+        }).immediate();
+        return;
+      }
       if (renderedMedia && !renderedAssetsRegistered) {
         for (const target of [renderedMedia.audioFilePath, renderedMedia.videoFilePath]) {
           try { if (target && fs.existsSync(target)) fs.unlinkSync(target); } catch (_) {}
@@ -758,7 +818,7 @@ export class JobManager {
       job.updatedAt = new Date().toISOString();
       const failurePersisted = persistDubbingJob(job);
       if (failurePersisted && job.projectId) {
-        db.prepare(`UPDATE projects SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+        db.prepare(`UPDATE projects SET status = CASE WHEN output_audio_media_id IS NOT NULL THEN COALESCE((SELECT status FROM dubbing_jobs WHERE project_id = projects.id AND status IN ('completed', 'partial') ORDER BY rowid DESC LIMIT 1), 'completed') ELSE 'failed' END, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
           .run(job.projectId, job.userId);
       }
       if (failurePersisted) {
@@ -801,7 +861,7 @@ export class JobManager {
 
     // Backward compatibility for jobs created before minute reservations were
     // introduced. Existing reservations are returned idempotently.
-    const requiredMinutes = minutesForDuration(job.params.duration);
+    const requiredMinutes = minutesForDuration(job.params.duration, job.params.creditMultiplier || 1);
     const reservation = requiredMinutes
       ? minuteUsageRepository.reserveMinutesForJob({
         userId: job.userId,
@@ -821,7 +881,7 @@ export class JobManager {
       persistDubbingJob(job);
       dubbingJobRepo.releaseDubbingJob(job.id, job.workerId);
       if (job.projectId) {
-        db.prepare(`UPDATE projects SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+        db.prepare(`UPDATE projects SET status = CASE WHEN output_audio_media_id IS NOT NULL THEN COALESCE((SELECT status FROM dubbing_jobs WHERE project_id = projects.id AND status IN ('completed', 'partial') ORDER BY rowid DESC LIMIT 1), 'completed') ELSE 'failed' END, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
           .run(job.projectId, job.userId);
       }
       logEvent('dubbing_job_reservation_failed', { jobId: job.id, reason: reservation.reason });
@@ -839,13 +899,14 @@ export class JobManager {
       dubbingJobRepo.releaseDubbingJob(job.id, job.workerId);
       minuteUsageRepository.refundMinutesForJob(job.id, job.error);
       if (job.projectId) {
-        db.prepare(`UPDATE projects SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+        db.prepare(`UPDATE projects SET status = CASE WHEN output_audio_media_id IS NOT NULL THEN COALESCE((SELECT status FROM dubbing_jobs WHERE project_id = projects.id AND status IN ('completed', 'partial') ORDER BY rowid DESC LIMIT 1), 'completed') ELSE 'failed' END, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
           .run(job.projectId, job.userId);
       }
       logEvent('dubbing_job_source_missing', { jobId: job.id, mediaId: job.mediaId });
       return false;
     }
     const params = {
+      ...job.params,
       filePath,
       originalLanguage: job.params.originalLanguage || 'en',
       targetLanguage: job.params.targetLanguage || 'uz',
@@ -853,8 +914,9 @@ export class JobManager {
       speakerVoices: job.params.speakerVoices || {},
       duration: job.params.duration ?? null,
       savedSegments: job.params.savedSegments || [],
+      speechCadence: job.params.speechCadence || 'natural',
       autoCloneVoices: job.params.autoCloneVoices === true,
-      voiceCloningConsentAt: job.params.voiceCloningConsentAt || null,
+      autoAssignSiteVoices: job.params.autoAssignSiteVoices === true,
     };
 
     setImmediate(() => {
@@ -874,7 +936,7 @@ export class JobManager {
       } else {
         const latest = dubbingJobRepo.findDubbingJobById(storedJob.id);
         if (latest?.status === 'failed' && latest.project_id) {
-          db.prepare(`UPDATE projects SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+          db.prepare(`UPDATE projects SET status = CASE WHEN output_audio_media_id IS NOT NULL THEN COALESCE((SELECT status FROM dubbing_jobs WHERE project_id = projects.id AND status IN ('completed', 'partial') ORDER BY rowid DESC LIMIT 1), 'completed') ELSE 'failed' END, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
             .run(latest.project_id, latest.user_id);
         }
         if (latest?.status === 'failed') {
@@ -994,7 +1056,7 @@ export class JobManager {
     if (storedJob.attempt >= storedJob.max_attempts) return { error: 'Retry limit has been reached for this job.' };
 
     const params = dubbingJobRepo.getDubbingJobParams(storedJob);
-    const requiredMinutes = minutesForDuration(params.duration);
+    const requiredMinutes = minutesForDuration(params.duration, params.creditMultiplier || 1);
     if (!requiredMinutes) return { error: 'The original media duration is unavailable.' };
     const job = {
       ...dubbingJobRepo.formatDubbingJob(storedJob),

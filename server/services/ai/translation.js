@@ -1,3 +1,4 @@
+import { textProvider } from './textProvider.js';
 /**
  * Provider-Agnostic Translation Service
  * Supports OpenAI GPT & DeepL with native high-quality Uzbek translation prompt
@@ -58,13 +59,14 @@ async function translateWithDeepL({ text, sourceLanguage, targetLanguage, apiKey
     : 'https://api.deepl.com');
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v2/translate`, {
     method: 'POST',
+    signal: AbortSignal.timeout(120_000),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `DeepL-Auth-Key ${apiKey}`,
     },
     body: JSON.stringify({
       text: [text],
-      source_lang: translateWithDeepLTargetCode(sourceLanguage),
+      ...(sourceLanguage && sourceLanguage !== 'auto' ? { source_lang: translateWithDeepLTargetCode(sourceLanguage) } : {}),
       target_lang: translateWithDeepLTargetCode(targetLanguage),
       preserve_formatting: true,
     }),
@@ -86,7 +88,7 @@ async function translateBatchWithOpenAI({
 }) {
   if (!items.length || !apiKey) return new Map();
 
-  const prompt = `You are an expert dubbing translator and localization engineer specializing in natural spoken speech. Translate the following dialogue segments from ${sourceLanguage} to ${targetLanguage}.
+  const prompt = `You are an expert dubbing translator and localization engineer specializing in natural spoken speech. Translate the following dialogue segments from ${sourceLanguage === 'auto' ? 'their detected source language' : sourceLanguage} to ${targetLanguage}.
 Guidelines:
 1. Maintain natural conversational tone, emotional nuances, and pacing suitable for dubbing.
 2. The translated text should closely match the natural spoken duration of the original phrase.
@@ -99,14 +101,17 @@ Guidelines:
     text: item.originalText,
   }));
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const provider = textProvider();
+  const response = await fetch(provider.url, {
     method: 'POST',
+    signal: AbortSignal.timeout(120_000),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_TRANSLATION_MODEL || 'gpt-4o-mini',
+      model: provider.model,
+      ...(provider.provider === 'deepseek' ? { thinking: { type: 'disabled' } } : {}),
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: prompt },
@@ -117,12 +122,12 @@ Guidelines:
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI batch translation failed (${response.status}).`);
+    throw new Error(`${provider.provider} batch translation failed (${response.status}).`);
   }
 
   const data = await response.json();
   const rawContent = data.choices?.[0]?.message?.content?.trim();
-  if (!rawContent) throw new Error('OpenAI returned empty response for batch translation.');
+  if (!rawContent) throw new Error(`${provider.provider} returned empty response for batch translation.`);
 
   const parsed = JSON.parse(rawContent);
   const translations = Array.isArray(parsed.translations)
@@ -143,25 +148,29 @@ export async function translateText({
   sourceLanguage = 'en',
   targetLanguage = 'uz',
 } = {}) {
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const provider = textProvider();
+  const openaiKey = provider.apiKey;
+  if (provider.provider === 'deepseek' && !openaiKey) throw new Error('DEEPSEEK_API_KEY is required for DeepSeek translation.');
   const deepLKey = process.env.DEEPL_API_KEY;
   const targetCode = (targetLanguage || 'uz').toLowerCase();
 
   // 1. Try OpenAI GPT Translation if API key configured
   if (openaiKey && text && text.trim()) {
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch(provider.url, {
         method: 'POST',
+    signal: AbortSignal.timeout(120_000),
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${openaiKey}`,
         },
         body: JSON.stringify({
-          model: process.env.OPENAI_TRANSLATION_MODEL || 'gpt-4o-mini',
+          model: provider.model,
+      ...(provider.provider === 'deepseek' ? { thinking: { type: 'disabled' } } : {}),
           messages: [
             {
               role: 'system',
-              content: `You are an expert dubbing translator and localization engineer specializing in natural spoken speech. Translate the following text from ${sourceLanguage} to ${targetLanguage}. Maintain spoken conversational tone, timing constraints, and emotional impact. Output ONLY the translated text without commentary.`,
+              content: `You are an expert dubbing translator and localization engineer specializing in natural spoken speech. Translate the following text from ${sourceLanguage === 'auto' ? 'its detected source language' : sourceLanguage} to ${targetLanguage}. Maintain spoken conversational tone, timing constraints, and emotional impact. Output ONLY the translated text without commentary.`,
             },
             {
               role: 'user',
@@ -172,12 +181,15 @@ export async function translateText({
         }),
       });
 
+      if (!response.ok && provider.provider === 'deepseek') throw new Error(`DeepSeek translation failed (${response.status}).`);
       if (response.ok) {
         const data = await response.json();
         const translated = data.choices?.[0]?.message?.content?.trim();
         if (translated) return translated;
+        if (provider.provider === 'deepseek') throw new Error('DeepSeek returned empty translation.');
       }
     } catch (err) {
+      if (provider.provider === 'deepseek') throw err;
       console.warn('[Translation API] Error, falling back to dictionary:', err);
     }
   }
@@ -222,7 +234,9 @@ export async function translateSegments({
   targetLanguage = 'uz',
   preserveExistingTranslations = false,
 } = {}) {
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const provider = textProvider();
+  const openaiKey = provider.apiKey;
+  if (provider.provider === 'deepseek' && !openaiKey) throw new Error('DEEPSEEK_API_KEY is required for DeepSeek translation.');
   const BATCH_SIZE = 25;
 
   // 1. Identify which segments already have usable translations and which need translation
@@ -283,12 +297,14 @@ export async function translateSegments({
           targetLanguage,
           apiKey: openaiKey,
         });
+        if (provider.provider === 'deepseek' && chunk.some(item => !batchResults.get(item.batchIndex))) throw new Error('DeepSeek returned an incomplete translation batch; review before retrying.');
         for (const item of chunk) {
           if (batchResults.has(item.batchIndex)) {
             translatedMap.set(item.segIndex, batchResults.get(item.batchIndex));
           }
         }
       } catch (err) {
+        if (provider.provider === 'deepseek') throw err;
         console.warn('[Translation API] Batch translation error, falling back to individual translation:', err.message);
       }
     }
